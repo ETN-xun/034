@@ -2,15 +2,23 @@ using UnityEngine;
 
 [RequireComponent(typeof(CircuitElement))]
 [RequireComponent(typeof(Renderer))]
-public class SineElementSetup : MonoBehaviour
+public class SemiCircleElementSetup : MonoBehaviour
 {
+    public const float DefaultBodyRadiusInGridUnits = 1f;
+
+    [SerializeField]
+    private float bodyRadiusInGridUnits = DefaultBodyRadiusInGridUnits;
+
+    [SerializeField]
+    private float bodyDepth = 0.2f;
+
     [SerializeField]
     private float terminalScale = 0.22f;
 
     [SerializeField]
     private float gridSpacing = 1f;
 
-    private static readonly Vector3[] TerminalOffsets =
+    private static readonly Vector3[] TerminalDirections =
     {
         new Vector3(1f, 0f, 0f),
         new Vector3(0f, 1f, 0f),
@@ -33,7 +41,10 @@ public class SineElementSetup : MonoBehaviour
             circuitElement = GetComponent<CircuitElement>();
         }
 
-        transform.localScale = Vector3.one;
+        var spacing = Mathf.Max(0.01f, gridSpacing);
+        var radius = Mathf.Max(0.05f, bodyRadiusInGridUnits * spacing);
+        var diameter = radius * 2f;
+        transform.localScale = new Vector3(diameter, diameter, Mathf.Max(0.01f, bodyDepth));
         transform.position = SnapToGrid(transform.position);
         ApplyBodyColor();
         EnsureTerminals();
@@ -56,8 +67,10 @@ public class SineElementSetup : MonoBehaviour
 
     private void EnsureTerminals()
     {
-        var expectedNames = new string[TerminalOffsets.Length];
-        for (var i = 0; i < TerminalOffsets.Length; i++)
+        var expectedNames = new string[TerminalDirections.Length];
+        var spacing = Mathf.Max(0.01f, gridSpacing);
+        var radius = Mathf.Max(0.05f, bodyRadiusInGridUnits * spacing);
+        for (var i = 0; i < TerminalDirections.Length; i++)
         {
             expectedNames[i] = $"Terminal_{i}";
             var terminalObject = transform.Find(expectedNames[i]);
@@ -69,7 +82,7 @@ public class SineElementSetup : MonoBehaviour
                 terminalObject = created.transform;
             }
 
-            terminalObject.localPosition = TerminalOffsets[i];
+            terminalObject.localPosition = TerminalDirections[i] * (radius / Mathf.Max(0.0001f, transform.localScale.x));
             terminalObject.localScale = Vector3.one * terminalScale;
             terminalObject.localRotation = Quaternion.identity;
 

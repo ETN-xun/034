@@ -43,20 +43,26 @@ public class DraggablePlacedComponent : MonoBehaviour
         }
 
         var world = GetMouseWorldPosition() + dragOffset;
-
-        if (restrictToFieldArea)
-        {
-            var minFieldX = targetCamera.ViewportToWorldPoint(new Vector3(backpackViewportWidth, 0.5f, -targetCamera.transform.position.z)).x;
-            world.x = Mathf.Max(minFieldX + 0.5f, world.x);
-        }
-
         transform.position = SnapToGrid(world);
     }
 
     private void OnMouseUp()
     {
         isDragging = false;
-        transform.position = SnapToGrid(transform.position);
+        var snapped = SnapToGrid(transform.position);
+        if (IsInsideBackpackArea(snapped))
+        {
+            ReclaimToBackpack();
+            return;
+        }
+
+        if (restrictToFieldArea)
+        {
+            var minFieldX = GetBackpackBoundaryX();
+            snapped.x = Mathf.Max(minFieldX + 0.5f, snapped.x);
+        }
+
+        transform.position = snapped;
     }
 
     public void BeginExternalDragAt(Vector3 worldPosition)
@@ -93,5 +99,37 @@ public class DraggablePlacedComponent : MonoBehaviour
         world.y = Mathf.Round(world.y / spacing) * spacing;
         world.z = 0f;
         return world;
+    }
+
+    private float GetBackpackBoundaryX()
+    {
+        if (targetCamera == null)
+        {
+            targetCamera = Camera.main;
+        }
+
+        return targetCamera.ViewportToWorldPoint(new Vector3(backpackViewportWidth, 0.5f, -targetCamera.transform.position.z)).x;
+    }
+
+    private bool IsInsideBackpackArea(Vector3 worldPosition)
+    {
+        return worldPosition.x <= GetBackpackBoundaryX();
+    }
+
+    private void ReclaimToBackpack()
+    {
+        var element = GetComponent<CircuitElement>();
+        if (element == null)
+        {
+            return;
+        }
+
+        if (WiringManager.Instance != null)
+        {
+            WiringManager.Instance.RemoveConnectionsForElement(element);
+        }
+
+        BackpackItemSpawner.AddInventoryToType(element.ElementType, 1);
+        Destroy(gameObject);
     }
 }

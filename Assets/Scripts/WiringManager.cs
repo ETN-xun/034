@@ -89,6 +89,58 @@ public class WiringManager : MonoBehaviour
         CancelPreview();
     }
 
+    public void GetConnectionsForElement(CircuitElement element, List<WireConnection> output)
+    {
+        if (output == null)
+        {
+            return;
+        }
+
+        output.Clear();
+        if (element == null)
+        {
+            return;
+        }
+
+        CleanupDestroyedWires();
+        for (var i = 0; i < wireConnections.Count; i++)
+        {
+            var wire = wireConnections[i];
+            if (wire == null || !wire.IsConnectedToElement(element))
+            {
+                continue;
+            }
+
+            output.Add(wire);
+        }
+    }
+
+    public void RemoveConnectionsForElement(CircuitElement element)
+    {
+        if (element == null)
+        {
+            return;
+        }
+
+        CleanupDestroyedWires();
+        for (var i = wireConnections.Count - 1; i >= 0; i--)
+        {
+            var wire = wireConnections[i];
+            if (wire == null || !wire.IsConnectedToElement(element))
+            {
+                continue;
+            }
+
+            if (selectedWire == wire)
+            {
+                selectedWire = null;
+            }
+
+            wireConnections.RemoveAt(i);
+            Destroy(wire.gameObject);
+        }
+    }
+
     private void Update()
     {
         CleanupDestroyedWires();
@@ -124,6 +176,7 @@ public class WiringManager : MonoBehaviour
     private void CreateWire(ConnectorTerminal from, ConnectorTerminal to, IReadOnlyList<Vector3> bendPoints)
     {
         var wireObject = new GameObject("Wire");
+        BackpackItemSpawner.AttachToLevelRoot(wireObject.transform);
         var line = wireObject.AddComponent<LineRenderer>();
         line.gameObject.name = "WireLine";
 

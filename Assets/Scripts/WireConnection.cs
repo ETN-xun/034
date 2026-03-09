@@ -27,6 +27,49 @@ public class WireConnection : MonoBehaviour
     private float signalFrequency;
     private bool hasSignal;
 
+    public bool IsConnectedToElement(CircuitElement element)
+    {
+        if (element == null)
+        {
+            return false;
+        }
+
+        return (terminalA != null && terminalA.OwnerElement == element) || (terminalB != null && terminalB.OwnerElement == element);
+    }
+
+    public bool TryGetSignalShapeParams(out float amplitude, out float wavelength, out float frequency)
+    {
+        amplitude = signalAmplitude;
+        wavelength = signalWavelength;
+        frequency = signalFrequency;
+        return hasSignal;
+    }
+
+    public bool TryGetSignalAtElement(CircuitElement element, float time, out float signalValue)
+    {
+        signalValue = 0f;
+        if (!hasSignal || element == null)
+        {
+            return false;
+        }
+
+        var terminal = GetTerminalForElement(element);
+        if (terminal == null)
+        {
+            return false;
+        }
+
+        BuildSegmentLengths();
+        if (totalLength <= 0.001f)
+        {
+            return false;
+        }
+
+        var distance = terminal == terminalA ? 0f : totalLength;
+        signalValue = EvaluateSemicircleWave(distance, time, signalWavelength, signalFrequency, signalAmplitude);
+        return true;
+    }
+
     public void Initialize(
         ConnectorTerminal a,
         ConnectorTerminal b,
@@ -263,6 +306,21 @@ public class WireConnection : MonoBehaviour
         return null;
     }
 
+    private ConnectorTerminal GetTerminalForElement(CircuitElement element)
+    {
+        if (terminalA != null && terminalA.OwnerElement == element)
+        {
+            return terminalA;
+        }
+
+        if (terminalB != null && terminalB.OwnerElement == element)
+        {
+            return terminalB;
+        }
+
+        return null;
+    }
+
     private void UpdateSignalLine()
     {
         if (signalRenderer == null)
@@ -351,15 +409,22 @@ public class WireConnection : MonoBehaviour
 
     private float ComputeAlternatingSemicircleOffset(float distance, float time)
     {
-        var wavelength = Mathf.Max(0.001f, signalWavelength);
-        var phaseDistance = distance - time * signalFrequency * wavelength;
-        var local = Mathf.Repeat(phaseDistance, wavelength);
-        var halfWave = wavelength * 0.5f;
+        return EvaluateSemicircleWave(distance, time, signalWavelength, signalFrequency, signalAmplitude);
+    }
+
+    public static float EvaluateSemicircleWave(float distance, float time, float wavelength, float frequency, float amplitude)
+    {
+        var safeWavelength = Mathf.Max(0.001f, wavelength);
+        var safeFrequency = Mathf.Max(0.01f, frequency);
+        var safeAmplitude = Mathf.Max(0f, amplitude);
+        var phaseDistance = distance - time * safeFrequency * safeWavelength;
+        var local = Mathf.Repeat(phaseDistance, safeWavelength);
+        var halfWave = safeWavelength * 0.5f;
         var segment = local < halfWave ? local : local - halfWave;
         var x = segment / Mathf.Max(0.0001f, halfWave);
         var circleX = x * 2f - 1f;
         var y = Mathf.Sqrt(Mathf.Max(0f, 1f - circleX * circleX));
         var sign = local < halfWave ? 1f : -1f;
-        return y * signalAmplitude * sign;
+        return y * safeAmplitude * sign;
     }
 }
