@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.IO;
 
 public class WiringManager : MonoBehaviour
 {
@@ -35,14 +36,30 @@ public class WiringManager : MonoBehaviour
     [SerializeField]
     private float signalFrequency = 0.8f;
 
+    [SerializeField]
+    private Texture2D defaultCursorWhite;
+
+    [SerializeField]
+    private Texture2D terminalHoverCursorYellow;
+
+    [SerializeField]
+    private Vector2 cursorHotspot = new Vector2(8f, 8f);
+
+    [SerializeField]
+    private float terminalPickRadius = 0.3f;
+
     private ConnectorTerminal startTerminal;
     private LineRenderer previewLine;
     private readonly List<Vector3> previewWaypoints = new List<Vector3>();
     private readonly List<WireConnection> wireConnections = new List<WireConnection>();
     private WireConnection selectedWire;
+    private ConnectorTerminal hoveredTerminal;
     private int lastTerminalClickFrame;
+    private bool cursorIsYellow;
+    private int activeDragCount;
 
     private Material lineMaterial;
+    public bool AreTerminalsVisible => startTerminal != null;
 
     private void Awake()
     {
@@ -61,6 +78,17 @@ public class WiringManager : MonoBehaviour
 
         lineMaterial = new Material(Shader.Find("Sprites/Default"));
         lineMaterial.color = wireColor;
+        EnsureCursorTexturesLoaded();
+        SetCursorWhite();
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            SetCursorWhite();
+            Instance = null;
+        }
     }
 
     public void HandleTerminalClick(ConnectorTerminal terminal)
@@ -131,19 +159,45 @@ public class WiringManager : MonoBehaviour
                 continue;
             }
 
-            if (selectedWire == wire)
-            {
-                selectedWire = null;
-            }
-
-            wireConnections.RemoveAt(i);
-            Destroy(wire.gameObject);
+            DeleteWire(wire, true);
         }
+    }
+
+    public void NotifyElementDragStarted()
+    {
+        activeDragCount++;
+        CancelPreview();
+    }
+
+    public void NotifyElementDragEnded()
+    {
+        activeDragCount = Mathf.Max(0, activeDragCount - 1);
     }
 
     private void Update()
     {
         CleanupDestroyedWires();
+        if (activeDragCount > 0)
+        {
+            hoveredTerminal = null;
+            CancelPreview();
+            UpdateCursorState();
+            return;
+        }
+
+        hoveredTerminal = FindHoveredTerminal();
+        UpdateCursorState();
+        if (Input.GetMouseButtonDown(2) && Test.IsGmPanelVisible)
+        {
+            ToggleLockAtMouse();
+        }
+
+        var handledTerminalClick = false;
+        if (Input.GetMouseButtonDown(0) && hoveredTerminal != null)
+        {
+            HandleTerminalClick(hoveredTerminal);
+            handledTerminalClick = true;
+        }
 
         if (startTerminal != null && (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape)))
         {
@@ -151,7 +205,7 @@ public class WiringManager : MonoBehaviour
             return;
         }
 
-        if (startTerminal != null && Input.GetMouseButtonDown(0) && Time.frameCount != lastTerminalClickFrame)
+        if (startTerminal != null && !handledTerminalClick && Input.GetMouseButtonDown(0) && Time.frameCount != lastTerminalClickFrame)
         {
             AddBendPoint();
         }
@@ -162,12 +216,12 @@ public class WiringManager : MonoBehaviour
             return;
         }
 
-        if (Input.GetMouseButtonDown(0))
+        if (!handledTerminalClick && Input.GetMouseButtonDown(0))
         {
             SelectWireAtMouse();
         }
 
-        if (selectedWire != null && Input.GetKeyDown(KeyCode.Delete))
+        if (selectedWire != null && (Input.GetKeyDown(KeyCode.Delete) || Input.GetKeyDown(KeyCode.Backspace)))
         {
             DeleteSelectedWire();
         }
@@ -296,9 +350,7 @@ public class WiringManager : MonoBehaviour
             return;
         }
 
-        wireConnections.Remove(selectedWire);
-        Destroy(selectedWire.gameObject);
-        selectedWire = null;
+        DeleteWire(selectedWire, false);
     }
 
     private void SetSelectedWire(WireConnection wire)
@@ -346,6 +398,112 @@ public class WiringManager : MonoBehaviour
         }
     }
 
+    private void ToggleLockAtMouse()
+    {
+        var element = FindElementAtMouse();
+        if (element != null)
+        {
+            element.ToggleLock();
+            return;
+        }
+
+        var wire = FindWireAtMouse();
+        if (wire != null)
+        {
+            wire.ToggleLock();
+        }
+    }
+
+    private CircuitElement FindElementAtMouse()
+    {
+        if (targetCamera == null)
+        {
+            targetCamera = Camera.main;
+        }
+
+        if (targetCamera == null)
+        {
+            return null;
+        }
+
+        if (hoveredTerminal != null && hoveredTerminal.OwnerElement != null)
+        {
+            return hoveredTerminal.OwnerElement;
+        }
+
+        var ray = targetCamera.ScreenPointToRay(Input.mousePosition);
+        var hits = Physics.RaycastAll(ray, 1000f, ~0, QueryTriggerInteraction.Collide);
+        var bestDistance = float.PositiveInfinity;
+        var bestElement = default(CircuitElement);
+        for (var i = 0; i < hits.Length; i++)
+        {
+            var hit = hits[i];
+            if (hit.collider == null || hit.distance >= bestDistance)
+            {
+                continue;
+            }
+
+            var element = hit.collider.GetComponentInParent<CircuitElement>();
+            if (element == null)
+            {
+                continue;
+            }
+
+            bestDistance = hit.distance;
+            bestElement = element;
+        }
+
+        return bestElement;
+    }
+
+    private WireConnection FindWireAtMouse()
+    {
+        var mouse = GetMouseWorldPosition();
+        var closest = default(WireConnection);
+        var closestDistance = wireSelectDistance;
+
+        for (var i = 0; i < wireConnections.Count; i++)
+        {
+            var wire = wireConnections[i];
+            if (wire == null)
+            {
+                continue;
+            }
+
+            var distance = wire.DistanceToPoint(mouse);
+            if (distance > closestDistance)
+            {
+                continue;
+            }
+
+            closest = wire;
+            closestDistance = distance;
+        }
+
+        return closest;
+    }
+
+    private void DeleteWire(WireConnection wire, bool ignoreLock)
+    {
+        if (wire == null)
+        {
+            return;
+        }
+
+        if (!ignoreLock && wire.IsLocked)
+        {
+            return;
+        }
+
+        wireConnections.Remove(wire);
+        if (selectedWire == wire)
+        {
+            selectedWire = null;
+        }
+
+        Destroy(wire.gameObject);
+    }
+
     private Vector3 GetMouseWorldPosition()
     {
         if (targetCamera == null)
@@ -367,5 +525,157 @@ public class WiringManager : MonoBehaviour
         world.y = Mathf.Round(world.y / spacing) * spacing;
         world.z = 0f;
         return world;
+    }
+
+    private void UpdateCursorState()
+    {
+        var shouldBeYellow = hoveredTerminal != null && terminalHoverCursorYellow != null;
+        if (shouldBeYellow == cursorIsYellow)
+        {
+            return;
+        }
+
+        if (shouldBeYellow)
+        {
+            ApplyCursor(terminalHoverCursorYellow);
+            cursorIsYellow = true;
+            return;
+        }
+
+        SetCursorWhite();
+    }
+
+    private ConnectorTerminal FindHoveredTerminal()
+    {
+        if (targetCamera == null)
+        {
+            targetCamera = Camera.main;
+        }
+
+        if (targetCamera == null)
+        {
+            return null;
+        }
+
+        var ray = targetCamera.ScreenPointToRay(Input.mousePosition);
+        var hits = Physics.RaycastAll(ray, 1000f, ~0, QueryTriggerInteraction.Collide);
+        var best = default(ConnectorTerminal);
+        var bestDistance = float.PositiveInfinity;
+        for (var i = 0; i < hits.Length; i++)
+        {
+            var hit = hits[i];
+            var terminal = hit.collider == null ? null : hit.collider.GetComponent<ConnectorTerminal>();
+            if (terminal == null || hit.distance >= bestDistance)
+            {
+                continue;
+            }
+
+            best = terminal;
+            bestDistance = hit.distance;
+        }
+
+        if (best != null)
+        {
+            return best;
+        }
+
+        var rayToPlaneDistance = Mathf.Abs(ray.direction.z) > 0.0001f ? -ray.origin.z / ray.direction.z : 0f;
+        if (rayToPlaneDistance < 0f)
+        {
+            return null;
+        }
+
+        var mouseWorld = ray.origin + ray.direction * rayToPlaneDistance;
+        mouseWorld.z = 0f;
+        var allTerminals = FindObjectsOfType<ConnectorTerminal>();
+        var bestFallback = default(ConnectorTerminal);
+        var bestFallbackDistance = terminalPickRadius * terminalPickRadius;
+        for (var i = 0; i < allTerminals.Length; i++)
+        {
+            var terminal = allTerminals[i];
+            if (terminal == null || !terminal.isActiveAndEnabled)
+            {
+                continue;
+            }
+
+            var collider = terminal.GetComponent<Collider>();
+            if (collider == null)
+            {
+                continue;
+            }
+
+            var closest = collider.ClosestPoint(mouseWorld);
+            closest.z = 0f;
+            var distance = (closest - mouseWorld).sqrMagnitude;
+            if (distance > bestFallbackDistance)
+            {
+                continue;
+            }
+
+            bestFallbackDistance = distance;
+            bestFallback = terminal;
+        }
+
+        return bestFallback;
+    }
+
+    private void SetCursorWhite()
+    {
+        cursorIsYellow = false;
+        ApplyCursor(defaultCursorWhite);
+    }
+
+    private void EnsureCursorTexturesLoaded()
+    {
+        defaultCursorWhite = EnsureValidCursorTexture(defaultCursorWhite, "white.png");
+        terminalHoverCursorYellow = EnsureValidCursorTexture(terminalHoverCursorYellow, "yellow.png");
+    }
+
+    private Texture2D LoadCursorTextureFromFile(string fileName)
+    {
+        var path = Path.Combine(Application.dataPath, "Cursor", fileName);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        var bytes = File.ReadAllBytes(path);
+        var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+        if (!texture.LoadImage(bytes, false))
+        {
+            Destroy(texture);
+            return null;
+        }
+
+        texture.filterMode = FilterMode.Bilinear;
+        texture.wrapMode = TextureWrapMode.Clamp;
+        return texture;
+    }
+
+    private void ApplyCursor(Texture2D texture)
+    {
+        Cursor.SetCursor(texture, cursorHotspot, CursorMode.Auto);
+    }
+
+    private Texture2D EnsureValidCursorTexture(Texture2D configured, string fallbackFileName)
+    {
+        var source = configured != null ? configured : LoadCursorTextureFromFile(fallbackFileName);
+        if (source == null)
+        {
+            return null;
+        }
+
+        var runtimeCopy = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false);
+        var active = RenderTexture.active;
+        var renderTexture = RenderTexture.GetTemporary(source.width, source.height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default);
+        Graphics.Blit(source, renderTexture);
+        RenderTexture.active = renderTexture;
+        runtimeCopy.ReadPixels(new Rect(0f, 0f, source.width, source.height), 0, 0, false);
+        runtimeCopy.Apply(false, false);
+        RenderTexture.active = active;
+        RenderTexture.ReleaseTemporary(renderTexture);
+        runtimeCopy.filterMode = FilterMode.Bilinear;
+        runtimeCopy.wrapMode = TextureWrapMode.Clamp;
+        return runtimeCopy;
     }
 }

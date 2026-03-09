@@ -14,8 +14,13 @@ public class DraggablePlacedComponent : MonoBehaviour
     [SerializeField]
     private float gridSpacing = 1f;
 
+    [SerializeField]
+    private float dragStartThresholdPixels = 8f;
+
     private bool isDragging;
+    private bool isPointerDown;
     private Vector3 dragOffset;
+    private Vector3 pointerDownScreenPosition;
 
     private void Awake()
     {
@@ -29,17 +34,32 @@ public class DraggablePlacedComponent : MonoBehaviour
 
     private void OnMouseDown()
     {
-        if (WiringManager.Instance != null)
+        if (IsLocked())
         {
-            BeginDrag();
+            return;
         }
+
+        isPointerDown = true;
+        pointerDownScreenPosition = Input.mousePosition;
     }
 
     private void OnMouseDrag()
     {
-        if (!isDragging)
+        if (!isPointerDown)
         {
             return;
+        }
+
+        if (!isDragging)
+        {
+            var dragDelta = Input.mousePosition - pointerDownScreenPosition;
+            var threshold = Mathf.Max(1f, dragStartThresholdPixels);
+            if (dragDelta.sqrMagnitude < threshold * threshold)
+            {
+                return;
+            }
+
+            BeginDrag();
         }
 
         var world = GetMouseWorldPosition() + dragOffset;
@@ -48,6 +68,13 @@ public class DraggablePlacedComponent : MonoBehaviour
 
     private void OnMouseUp()
     {
+        isPointerDown = false;
+        EndDrag();
+        if (!isDragging)
+        {
+            return;
+        }
+
         isDragging = false;
         var snapped = SnapToGrid(transform.position);
         if (IsInsideBackpackArea(snapped))
@@ -65,17 +92,52 @@ public class DraggablePlacedComponent : MonoBehaviour
         transform.position = snapped;
     }
 
+    private void OnDisable()
+    {
+        isPointerDown = false;
+        EndDrag();
+    }
+
     public void BeginExternalDragAt(Vector3 worldPosition)
     {
+        if (IsLocked())
+        {
+            return;
+        }
+
         transform.position = SnapToGrid(worldPosition);
+        isPointerDown = true;
+        pointerDownScreenPosition = Input.mousePosition;
         BeginDrag();
         dragOffset = Vector3.zero;
     }
 
     private void BeginDrag()
     {
+        if (isDragging)
+        {
+            return;
+        }
+
         isDragging = true;
         dragOffset = transform.position - GetMouseWorldPosition();
+        if (WiringManager.Instance != null)
+        {
+            WiringManager.Instance.NotifyElementDragStarted();
+        }
+    }
+
+    private void EndDrag()
+    {
+        if (!isDragging)
+        {
+            return;
+        }
+
+        if (WiringManager.Instance != null)
+        {
+            WiringManager.Instance.NotifyElementDragEnded();
+        }
     }
 
     private Vector3 GetMouseWorldPosition()
@@ -131,5 +193,11 @@ public class DraggablePlacedComponent : MonoBehaviour
 
         BackpackItemSpawner.AddInventoryToType(element.ElementType, 1);
         Destroy(gameObject);
+    }
+
+    private bool IsLocked()
+    {
+        var element = GetComponent<CircuitElement>();
+        return element != null && element.IsLocked;
     }
 }

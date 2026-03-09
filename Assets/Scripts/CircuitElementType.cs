@@ -1,5 +1,12 @@
 public enum CircuitElementType
 {
     SemiWaveGenerator,
-    SemiWaveReceiver
+    SemiWaveReceiver,
+    TriangleWaveGenerator,
+    TriangleWaveReceiver,
+    SquareWaveGenerator,
+    SquareWaveReceiver,
+    SemiWaveConverter,
+    TriangleWaveConverter,
+    SquareWaveConverter
 }

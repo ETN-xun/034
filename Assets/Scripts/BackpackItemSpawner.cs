@@ -401,37 +401,26 @@ public class BackpackItemSpawner : MonoBehaviour
     {
         switch (type)
         {
+            case CircuitElementType.SemiWaveGenerator:
+                return "Prefabs/SemiCircleGenerator";
             case CircuitElementType.SemiWaveReceiver:
                 return "Prefabs/SemiCircleReceiver";
+            case CircuitElementType.TriangleWaveGenerator:
+                return "Prefabs/TriangleWaveGenerator";
+            case CircuitElementType.TriangleWaveReceiver:
+                return "Prefabs/TriangleWaveReceiver";
+            case CircuitElementType.SquareWaveGenerator:
+                return "Prefabs/SquareWaveGenerator";
+            case CircuitElementType.SquareWaveReceiver:
+                return "Prefabs/SquareWaveReceiver";
+            case CircuitElementType.SemiWaveConverter:
+                return "Prefabs/SemiWaveConverter";
+            case CircuitElementType.TriangleWaveConverter:
+                return "Prefabs/TriangleWaveConverter";
+            case CircuitElementType.SquareWaveConverter:
+                return "Prefabs/SquareWaveConverter";
             default:
                 return "Prefabs/SemiCircleGenerator";
         }
-    }
-}
-
-public class BackpackInventoryState : MonoBehaviour
-{
-    [System.Serializable]
-    public class InventoryRecord
-    {
-        public CircuitElementType type;
-        public int count;
-        public string prefabResourcePath;
-    }
-
-    [SerializeField]
-    private List<InventoryRecord> records = new List<InventoryRecord>();
-
-    private void Awake()
-    {
-        if (records != null && records.Count > 0)
-        {
-            BackpackItemSpawner.ApplyInventorySnapshot(records);
-        }
-    }
-
-    public void SetInventory(List<InventoryRecord> newRecords)
-    {
-        records = newRecords ?? new List<InventoryRecord>();
     }
 }

@@ -3,6 +3,14 @@ using System.Collections.Generic;
 
 public class WireConnection : MonoBehaviour
 {
+    private enum SignalWaveform
+    {
+        None,
+        Semicircle,
+        Triangle,
+        Square
+    }
+
     [SerializeField]
     private ConnectorTerminal terminalA;
 
@@ -15,6 +23,9 @@ public class WireConnection : MonoBehaviour
     [SerializeField]
     private List<Vector3> bendPoints = new List<Vector3>();
 
+    [SerializeField]
+    private bool isLocked;
+
     private LineRenderer outlineRenderer;
     private LineRenderer signalRenderer;
     private readonly List<Vector3> currentPolyline = new List<Vector3>();
@@ -25,7 +36,9 @@ public class WireConnection : MonoBehaviour
     private float signalAmplitude;
     private float signalWavelength;
     private float signalFrequency;
+    private SignalWaveform signalWaveform;
     private bool hasSignal;
+    public bool IsLocked => isLocked;
 
     public bool IsConnectedToElement(CircuitElement element)
     {
@@ -43,6 +56,18 @@ public class WireConnection : MonoBehaviour
         wavelength = signalWavelength;
         frequency = signalFrequency;
         return hasSignal;
+    }
+
+    public bool TryGetSignalShape(out CircuitElementType sourceType)
+    {
+        sourceType = CircuitElementType.SemiWaveGenerator;
+        if (!hasSignal)
+        {
+            return false;
+        }
+
+        sourceType = GetElementTypeForWaveform(signalWaveform);
+        return true;
     }
 
     public bool TryGetSignalAtElement(CircuitElement element, float time, out float signalValue)
@@ -66,7 +91,15 @@ public class WireConnection : MonoBehaviour
         }
 
         var distance = terminal == terminalA ? 0f : totalLength;
-        signalValue = EvaluateSemicircleWave(distance, time, signalWavelength, signalFrequency, signalAmplitude);
+        if (TryGetSignalSource(out _, out var sourceTerminal, out _))
+        {
+            var sourceIsA = sourceTerminal == terminalA;
+            distance = sourceIsA
+                ? (terminal == terminalA ? 0f : totalLength)
+                : (terminal == terminalB ? 0f : totalLength);
+        }
+
+        signalValue = EvaluateWave(signalWaveform, distance, time, signalWavelength, signalFrequency, signalAmplitude);
         return true;
     }
 
@@ -170,6 +203,11 @@ public class WireConnection : MonoBehaviour
         }
     }
 
+    public void ToggleLock()
+    {
+        isLocked = !isLocked;
+    }
+
     public float DistanceToPoint(Vector3 point)
     {
         if (lineRenderer == null || lineRenderer.positionCount < 2)
@@ -269,16 +307,16 @@ public class WireConnection : MonoBehaviour
 
     private void InitializeSignalParams()
     {
-        var generatorElement = GetGeneratorElement();
-        if (generatorElement == null)
+        if (!TryGetSignalSource(out var sourceElement, out var sourceTerminal, out signalWaveform))
         {
             hasSignal = false;
             signalAmplitude = 0f;
             signalWavelength = 1f;
+            signalWaveform = SignalWaveform.None;
             return;
         }
 
-        var rendererComponent = generatorElement.GetComponent<Renderer>();
+        var rendererComponent = sourceElement.GetComponent<Renderer>();
         var radius = 0.5f;
         if (rendererComponent != null)
         {
@@ -291,19 +329,28 @@ public class WireConnection : MonoBehaviour
         hasSignal = true;
     }
 
-    private CircuitElement GetGeneratorElement()
+    private bool TryGetSignalSource(out CircuitElement sourceElement, out ConnectorTerminal sourceTerminal, out SignalWaveform waveform)
     {
-        if (terminalA != null && terminalA.OwnerElement != null && terminalA.OwnerElement.ElementType == CircuitElementType.SemiWaveGenerator)
+        sourceElement = null;
+        sourceTerminal = null;
+        waveform = SignalWaveform.None;
+        if (CanEmitSignal(terminalA, out var waveformA))
         {
-            return terminalA.OwnerElement;
+            sourceElement = terminalA.OwnerElement;
+            sourceTerminal = terminalA;
+            waveform = waveformA;
+            return true;
         }
 
-        if (terminalB != null && terminalB.OwnerElement != null && terminalB.OwnerElement.ElementType == CircuitElementType.SemiWaveGenerator)
+        if (CanEmitSignal(terminalB, out var waveformB))
         {
-            return terminalB.OwnerElement;
+            sourceElement = terminalB.OwnerElement;
+            sourceTerminal = terminalB;
+            waveform = waveformB;
+            return true;
         }
 
-        return null;
+        return false;
     }
 
     private ConnectorTerminal GetTerminalForElement(CircuitElement element)
@@ -328,6 +375,7 @@ public class WireConnection : MonoBehaviour
             return;
         }
 
+        InitializeSignalParams();
         if (!hasSignal || routedPolyline.Count < 2)
         {
             signalRenderer.enabled = false;
@@ -351,7 +399,7 @@ public class WireConnection : MonoBehaviour
         {
             var distance = totalLength * i / (sampleCount - 1);
             var sample = SampleAtDistance(distance);
-            var offset = ComputeAlternatingSemicircleOffset(distance, time);
+            var offset = ComputeSignalOffset(distance, time);
             sample.point += sample.normal * offset;
             sample.point.z = 0f;
             signalPoints.Add(sample.point);
@@ -407,9 +455,22 @@ public class WireConnection : MonoBehaviour
         return (fallback, Vector3.up);
     }
 
-    private float ComputeAlternatingSemicircleOffset(float distance, float time)
+    private float ComputeSignalOffset(float distance, float time)
     {
-        return EvaluateSemicircleWave(distance, time, signalWavelength, signalFrequency, signalAmplitude);
+        return EvaluateWave(signalWaveform, distance, time, signalWavelength, signalFrequency, signalAmplitude);
+    }
+
+    private static float EvaluateWave(SignalWaveform waveform, float distance, float time, float wavelength, float frequency, float amplitude)
+    {
+        switch (waveform)
+        {
+            case SignalWaveform.Triangle:
+                return EvaluateTriangleWave(distance, time, wavelength, frequency, amplitude);
+            case SignalWaveform.Square:
+                return EvaluateSquareWave(distance, time, wavelength, frequency, amplitude);
+            default:
+                return EvaluateSemicircleWave(distance, time, wavelength, frequency, amplitude);
+        }
     }
 
     public static float EvaluateSemicircleWave(float distance, float time, float wavelength, float frequency, float amplitude)
@@ -426,5 +487,168 @@ public class WireConnection : MonoBehaviour
         var y = Mathf.Sqrt(Mathf.Max(0f, 1f - circleX * circleX));
         var sign = local < halfWave ? 1f : -1f;
         return y * safeAmplitude * sign;
+    }
+
+    public static float EvaluateTriangleWave(float distance, float time, float wavelength, float frequency, float amplitude)
+    {
+        var safeWavelength = Mathf.Max(0.001f, wavelength);
+        var safeFrequency = Mathf.Max(0.01f, frequency);
+        var safeAmplitude = Mathf.Max(0f, amplitude);
+        var phaseDistance = distance - time * safeFrequency * safeWavelength;
+        var normalized = Mathf.Repeat(phaseDistance / safeWavelength, 1f);
+        var raw = 1f - 4f * Mathf.Abs(normalized - 0.5f);
+        return raw * safeAmplitude;
+    }
+
+    public static float EvaluateSquareWave(float distance, float time, float wavelength, float frequency, float amplitude)
+    {
+        var safeWavelength = Mathf.Max(0.001f, wavelength);
+        var safeFrequency = Mathf.Max(0.01f, frequency);
+        var safeAmplitude = Mathf.Max(0f, amplitude);
+        var phaseDistance = distance - time * safeFrequency * safeWavelength;
+        var local = Mathf.Repeat(phaseDistance, safeWavelength);
+        return local < safeWavelength * 0.5f ? safeAmplitude : -safeAmplitude;
+    }
+
+    private bool CanEmitSignal(ConnectorTerminal terminal, out SignalWaveform waveform)
+    {
+        waveform = SignalWaveform.None;
+        if (terminal == null || terminal.OwnerElement == null)
+        {
+            return false;
+        }
+
+        var type = terminal.OwnerElement.ElementType;
+        switch (type)
+        {
+            case CircuitElementType.SemiWaveGenerator:
+                waveform = SignalWaveform.Semicircle;
+                return true;
+            case CircuitElementType.TriangleWaveGenerator:
+                waveform = SignalWaveform.Triangle;
+                return true;
+            case CircuitElementType.SquareWaveGenerator:
+                waveform = SignalWaveform.Square;
+                return true;
+            case CircuitElementType.SemiWaveConverter:
+                if (!IsConverterOutputTerminal(terminal) || !HasConverterInputSignal(terminal.OwnerElement))
+                {
+                    return false;
+                }
+
+                waveform = SignalWaveform.Semicircle;
+                return true;
+            case CircuitElementType.TriangleWaveConverter:
+                if (!IsConverterOutputTerminal(terminal) || !HasConverterInputSignal(terminal.OwnerElement))
+                {
+                    return false;
+                }
+
+                waveform = SignalWaveform.Triangle;
+                return true;
+            case CircuitElementType.SquareWaveConverter:
+                if (!IsConverterOutputTerminal(terminal) || !HasConverterInputSignal(terminal.OwnerElement))
+                {
+                    return false;
+                }
+
+                waveform = SignalWaveform.Square;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private bool HasConverterInputSignal(CircuitElement converter)
+    {
+        if (converter == null || WiringManager.Instance == null)
+        {
+            return false;
+        }
+
+        var inputTerminal = converter.transform.Find("Terminal_Input");
+        if (inputTerminal == null)
+        {
+            return false;
+        }
+
+        var connections = new List<WireConnection>();
+        WiringManager.Instance.GetConnectionsForElement(converter, connections);
+        for (var i = 0; i < connections.Count; i++)
+        {
+            var connection = connections[i];
+            if (connection == null || connection == this)
+            {
+                continue;
+            }
+
+            var converterTerminal = connection.GetTerminalForElement(converter);
+            if (converterTerminal == null || converterTerminal.transform != inputTerminal)
+            {
+                continue;
+            }
+
+            var otherTerminal = connection.GetOppositeTerminal(converterTerminal);
+            if (otherTerminal == null || otherTerminal.OwnerElement == null)
+            {
+                continue;
+            }
+
+            if (IsPotentialSignalSource(otherTerminal.OwnerElement.ElementType))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsConverterOutputTerminal(ConnectorTerminal terminal)
+    {
+        return terminal != null && terminal.name == "Terminal_Output";
+    }
+
+    private ConnectorTerminal GetOppositeTerminal(ConnectorTerminal terminal)
+    {
+        if (terminal == terminalA)
+        {
+            return terminalB;
+        }
+
+        if (terminal == terminalB)
+        {
+            return terminalA;
+        }
+
+        return null;
+    }
+
+    private static bool IsPotentialSignalSource(CircuitElementType type)
+    {
+        switch (type)
+        {
+            case CircuitElementType.SemiWaveGenerator:
+            case CircuitElementType.TriangleWaveGenerator:
+            case CircuitElementType.SquareWaveGenerator:
+            case CircuitElementType.SemiWaveConverter:
+            case CircuitElementType.TriangleWaveConverter:
+            case CircuitElementType.SquareWaveConverter:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static CircuitElementType GetElementTypeForWaveform(SignalWaveform waveform)
+    {
+        switch (waveform)
+        {
+            case SignalWaveform.Triangle:
+                return CircuitElementType.TriangleWaveGenerator;
+            case SignalWaveform.Square:
+                return CircuitElementType.SquareWaveGenerator;
+            default:
+                return CircuitElementType.SemiWaveGenerator;
+        }
     }
 }

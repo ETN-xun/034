@@ -7,6 +7,9 @@ using UnityEditor;
 
 public class Test : MonoBehaviour
 {
+    public static Test Instance { get; private set; }
+    public static bool IsGmPanelVisible => Instance != null && Instance.showGmPanel;
+
     [SerializeField]
     private CircuitElementType addType = CircuitElementType.SemiWaveGenerator;
 
@@ -53,13 +56,34 @@ public class Test : MonoBehaviour
     private Vector2 backpackScrollPosition;
     private GUIStyle backpackItemStyle;
     private Renderer backpackPanelRenderer;
-    private Texture2D generatorIconTexture;
-    private Texture2D receiverIconTexture;
+    private Texture2D blueCircleIconTexture;
+    private Texture2D redCircleIconTexture;
+    private Texture2D whiteCircleIconTexture;
+    private Texture2D blueTriangleIconTexture;
+    private Texture2D redTriangleIconTexture;
+    private Texture2D whiteTriangleIconTexture;
+    private Texture2D blueSquareIconTexture;
+    private Texture2D redSquareIconTexture;
+    private Texture2D whiteSquareIconTexture;
     private Texture2D countPipTexture;
+    private Texture2D whiteButtonTexture;
     private const float ResizeHandleSize = 18f;
     private const float WinCheckInterval = 0.2f;
     private const string LevelPrefix = "Level";
     private const string LevelResourceFolder = "Prefabs";
+
+    private void Awake()
+    {
+        Instance = this;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            Instance = null;
+        }
+    }
 
     private void Start()
     {
@@ -312,23 +336,34 @@ public class Test : MonoBehaviour
         }
 
         var elements = levelRoot.GetComponentsInChildren<CircuitElement>(true);
-        var hasReceiver = false;
+        var placedReceiverCount = 0;
+        var matchedReceiverCount = 0;
         for (var i = 0; i < elements.Length; i++)
         {
             var element = elements[i];
-            if (element == null || element.ElementType != CircuitElementType.SemiWaveReceiver)
+            if (element == null || !IsReceiverType(element.ElementType))
             {
                 continue;
             }
 
-            hasReceiver = true;
-            if (!IsReceiverMatched(element))
+            placedReceiverCount++;
+            if (IsReceiverMatched(element))
             {
-                return false;
+                matchedReceiverCount++;
             }
         }
 
-        return hasReceiver;
+        var backpackReceiverCount =
+            BackpackItemSpawner.GetInventoryCount(CircuitElementType.SemiWaveReceiver)
+            + BackpackItemSpawner.GetInventoryCount(CircuitElementType.TriangleWaveReceiver)
+            + BackpackItemSpawner.GetInventoryCount(CircuitElementType.SquareWaveReceiver);
+        var totalReceiverCount = placedReceiverCount + backpackReceiverCount;
+        if (totalReceiverCount <= 0)
+        {
+            return false;
+        }
+
+        return matchedReceiverCount == totalReceiverCount;
     }
 
     private bool IsReceiverMatched(CircuitElement receiver)
@@ -344,10 +379,6 @@ public class Test : MonoBehaviour
             return false;
         }
 
-        var hasSignalParam = false;
-        var referenceAmplitude = 0f;
-        var referenceWavelength = 0f;
-        var referenceFrequency = 0f;
         for (var i = 0; i < receiverWires.Count; i++)
         {
             var wire = receiverWires[i];
@@ -356,61 +387,23 @@ public class Test : MonoBehaviour
                 continue;
             }
 
-            if (!wire.TryGetSignalShapeParams(out var amplitude, out var wavelength, out var frequency))
+            if (!wire.TryGetSignalShape(out var signalType))
             {
                 continue;
             }
 
-            referenceAmplitude = amplitude;
-            referenceWavelength = wavelength;
-            referenceFrequency = frequency;
-            hasSignalParam = true;
-            break;
-        }
-
-        if (!hasSignalParam)
-        {
-            return false;
-        }
-
-        var sampleCount = Mathf.Max(8, winSampleCount);
-        var period = 1f / Mathf.Max(0.01f, referenceFrequency);
-        var baseTime = Time.time;
-        for (var sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
-        {
-            var t = baseTime + period * sampleIndex / (sampleCount - 1);
-            var sum = 0f;
-            var contributorCount = 0;
-            for (var i = 0; i < receiverWires.Count; i++)
+            if (!wire.TryGetSignalShapeParams(out _, out _, out _))
             {
-                var wire = receiverWires[i];
-                if (wire == null)
-                {
-                    continue;
-                }
-
-                if (!wire.TryGetSignalAtElement(receiver, t, out var signal))
-                {
-                    continue;
-                }
-
-                sum += signal;
-                contributorCount++;
+                continue;
             }
 
-            if (contributorCount == 0)
+            if (IsSignalTypeMatchReceiver(receiver.ElementType, signalType))
             {
-                return false;
-            }
-
-            var target = WireConnection.EvaluateSemicircleWave(0f, t, referenceWavelength, referenceFrequency, referenceAmplitude);
-            if (Mathf.Abs(sum - target) > winTolerance)
-            {
-                return false;
+                return true;
             }
         }
 
-        return true;
+        return false;
     }
 
     private void LoadLevel(int levelIndex)
@@ -570,6 +563,11 @@ public class Test : MonoBehaviour
         backpackItemStyle.normal.textColor = new Color(0f, 0f, 0f, 0f);
         backpackItemStyle.hover.textColor = new Color(0f, 0f, 0f, 0f);
         backpackItemStyle.active.textColor = new Color(0f, 0f, 0f, 0f);
+        whiteButtonTexture = CreateSolidTexture(new Color(1f, 1f, 1f, 1f));
+        backpackItemStyle.normal.background = whiteButtonTexture;
+        backpackItemStyle.hover.background = whiteButtonTexture;
+        backpackItemStyle.active.background = whiteButtonTexture;
+        backpackItemStyle.focused.background = whiteButtonTexture;
     }
 
     private Texture2D GetInventoryIconTexture(CircuitElementType type)
@@ -577,19 +575,107 @@ public class Test : MonoBehaviour
         switch (type)
         {
             case CircuitElementType.SemiWaveReceiver:
-                if (receiverIconTexture == null)
+                if (redCircleIconTexture == null)
                 {
-                    receiverIconTexture = CreateCircleTexture(64, new Color(1f, 0.2f, 0.2f, 1f));
+                    redCircleIconTexture = CreateCircleTexture(64, new Color(1f, 0.2f, 0.2f, 1f));
                 }
 
-                return receiverIconTexture;
+                return redCircleIconTexture;
+            case CircuitElementType.SemiWaveConverter:
+                if (whiteCircleIconTexture == null)
+                {
+                    whiteCircleIconTexture = CreateCircleTexture(64, new Color(1f, 1f, 1f, 1f));
+                }
+
+                return whiteCircleIconTexture;
+            case CircuitElementType.TriangleWaveGenerator:
+                if (blueTriangleIconTexture == null)
+                {
+                    blueTriangleIconTexture = CreateTriangleTexture(64, new Color(0.2f, 0.45f, 1f, 1f));
+                }
+
+                return blueTriangleIconTexture;
+            case CircuitElementType.TriangleWaveReceiver:
+                if (redTriangleIconTexture == null)
+                {
+                    redTriangleIconTexture = CreateTriangleTexture(64, new Color(1f, 0.2f, 0.2f, 1f));
+                }
+
+                return redTriangleIconTexture;
+            case CircuitElementType.TriangleWaveConverter:
+                if (whiteTriangleIconTexture == null)
+                {
+                    whiteTriangleIconTexture = CreateTriangleTexture(64, new Color(1f, 1f, 1f, 1f));
+                }
+
+                return whiteTriangleIconTexture;
+            case CircuitElementType.SquareWaveGenerator:
+                if (blueSquareIconTexture == null)
+                {
+                    blueSquareIconTexture = CreateSquareTexture(64, new Color(0.2f, 0.45f, 1f, 1f));
+                }
+
+                return blueSquareIconTexture;
+            case CircuitElementType.SquareWaveReceiver:
+                if (redSquareIconTexture == null)
+                {
+                    redSquareIconTexture = CreateSquareTexture(64, new Color(1f, 0.2f, 0.2f, 1f));
+                }
+
+                return redSquareIconTexture;
+            case CircuitElementType.SquareWaveConverter:
+                if (whiteSquareIconTexture == null)
+                {
+                    whiteSquareIconTexture = CreateSquareTexture(64, new Color(1f, 1f, 1f, 1f));
+                }
+
+                return whiteSquareIconTexture;
             default:
-                if (generatorIconTexture == null)
+                if (blueCircleIconTexture == null)
                 {
-                    generatorIconTexture = CreateCircleTexture(64, new Color(0.2f, 0.45f, 1f, 1f));
+                    blueCircleIconTexture = CreateCircleTexture(64, new Color(0.2f, 0.45f, 1f, 1f));
                 }
 
-                return generatorIconTexture;
+                return blueCircleIconTexture;
+        }
+    }
+
+    private bool IsReceiverType(CircuitElementType type)
+    {
+        return type == CircuitElementType.SemiWaveReceiver
+            || type == CircuitElementType.TriangleWaveReceiver
+            || type == CircuitElementType.SquareWaveReceiver;
+    }
+
+    private bool IsSignalTypeMatchReceiver(CircuitElementType receiverType, CircuitElementType signalType)
+    {
+        switch (receiverType)
+        {
+            case CircuitElementType.TriangleWaveReceiver:
+                return signalType == CircuitElementType.TriangleWaveGenerator;
+            case CircuitElementType.SquareWaveReceiver:
+                return signalType == CircuitElementType.SquareWaveGenerator;
+            default:
+                return signalType == CircuitElementType.SemiWaveGenerator;
+        }
+    }
+
+    private float EvaluateReceiverTargetWave(
+        CircuitElementType receiverType,
+        float distance,
+        float time,
+        float wavelength,
+        float frequency,
+        float amplitude)
+    {
+        switch (receiverType)
+        {
+            case CircuitElementType.TriangleWaveReceiver:
+                return WireConnection.EvaluateTriangleWave(distance, time, wavelength, frequency, amplitude);
+            case CircuitElementType.SquareWaveReceiver:
+                return WireConnection.EvaluateSquareWave(distance, time, wavelength, frequency, amplitude);
+            default:
+                return WireConnection.EvaluateSemicircleWave(distance, time, wavelength, frequency, amplitude);
         }
     }
 
@@ -642,6 +728,103 @@ public class Test : MonoBehaviour
                 }
 
                 var color = distance >= radius - edge ? outline : fillColor;
+                texture.SetPixel(x, y, color);
+            }
+        }
+
+        texture.Apply(false, false);
+        return texture;
+    }
+
+    private Texture2D CreateSquareTexture(int size, Color fillColor)
+    {
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+        var margin = Mathf.Max(2, Mathf.RoundToInt(size * 0.12f));
+        var outline = new Color(0f, 0f, 0f, 0.75f);
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                var inside = x >= margin && x < size - margin && y >= margin && y < size - margin;
+                if (!inside)
+                {
+                    texture.SetPixel(x, y, Color.clear);
+                    continue;
+                }
+
+                var border = x <= margin + 1 || x >= size - margin - 2 || y <= margin + 1 || y >= size - margin - 2;
+                texture.SetPixel(x, y, border ? outline : fillColor);
+            }
+        }
+
+        texture.Apply(false, false);
+        return texture;
+    }
+
+    private Texture2D CreateTriangleTexture(int size, Color fillColor)
+    {
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+        var p0 = new Vector2(size * 0.5f, size * 0.88f);
+        var p1 = new Vector2(size * 0.12f, size * 0.18f);
+        var p2 = new Vector2(size * 0.88f, size * 0.18f);
+        var outline = new Color(0f, 0f, 0f, 0.75f);
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                var point = new Vector2(x + 0.5f, y + 0.5f);
+                if (!IsPointInTriangle(point, p0, p1, p2))
+                {
+                    texture.SetPixel(x, y, Color.clear);
+                    continue;
+                }
+
+                var edgeDistance = Mathf.Min(
+                    DistancePointToLine(point, p0, p1),
+                    Mathf.Min(DistancePointToLine(point, p1, p2), DistancePointToLine(point, p2, p0)));
+                texture.SetPixel(x, y, edgeDistance <= 1.6f ? outline : fillColor);
+            }
+        }
+
+        texture.Apply(false, false);
+        return texture;
+    }
+
+    private bool IsPointInTriangle(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
+    {
+        var s1 = Sign(p, a, b);
+        var s2 = Sign(p, b, c);
+        var s3 = Sign(p, c, a);
+        var hasNeg = (s1 < 0f) || (s2 < 0f) || (s3 < 0f);
+        var hasPos = (s1 > 0f) || (s2 > 0f) || (s3 > 0f);
+        return !(hasNeg && hasPos);
+    }
+
+    private float Sign(Vector2 p1, Vector2 p2, Vector2 p3)
+    {
+        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+    }
+
+    private float DistancePointToLine(Vector2 point, Vector2 a, Vector2 b)
+    {
+        var ab = b - a;
+        var length = Mathf.Max(0.0001f, ab.magnitude);
+        return Mathf.Abs(ab.y * point.x - ab.x * point.y + b.x * a.y - b.y * a.x) / length;
+    }
+
+    private Texture2D CreateSolidTexture(Color color)
+    {
+        var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+        for (var y = 0; y < 2; y++)
+        {
+            for (var x = 0; x < 2; x++)
+            {
                 texture.SetPixel(x, y, color);
             }
         }

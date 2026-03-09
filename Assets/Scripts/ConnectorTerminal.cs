@@ -6,6 +6,7 @@ public class ConnectorTerminal : MonoBehaviour
     public CircuitElement OwnerElement { get; private set; }
 
     public Vector3 Position => transform.position;
+    private Renderer cachedRenderer;
 
     private void Awake()
     {
@@ -13,15 +14,27 @@ public class ConnectorTerminal : MonoBehaviour
         {
             OwnerElement = GetComponentInParent<CircuitElement>();
         }
+
+        cachedRenderer = GetComponent<Renderer>();
+        ApplyVisibility();
     }
 
-    private void OnMouseDown()
+    private void LateUpdate()
     {
-        if (WiringManager.Instance == null)
+        ApplyVisibility();
+    }
+
+    private void ApplyVisibility()
+    {
+        if (cachedRenderer == null)
         {
             return;
         }
 
-        WiringManager.Instance.HandleTerminalClick(this);
+        var visible = WiringManager.Instance != null && WiringManager.Instance.AreTerminalsVisible;
+        if (cachedRenderer.enabled != visible)
+        {
+            cachedRenderer.enabled = visible;
+        }
     }
 }
