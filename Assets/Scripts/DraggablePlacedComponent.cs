@@ -11,6 +11,9 @@ public class DraggablePlacedComponent : MonoBehaviour
     [SerializeField]
     private bool restrictToFieldArea = true;
 
+    [SerializeField]
+    private float gridSpacing = 1f;
+
     private bool isDragging;
     private Vector3 dragOffset;
 
@@ -20,6 +23,8 @@ public class DraggablePlacedComponent : MonoBehaviour
         {
             targetCamera = Camera.main;
         }
+
+        transform.position = SnapToGrid(transform.position);
     }
 
     private void OnMouseDown()
@@ -45,18 +50,18 @@ public class DraggablePlacedComponent : MonoBehaviour
             world.x = Mathf.Max(minFieldX + 0.5f, world.x);
         }
 
-        world.z = 0f;
-        transform.position = world;
+        transform.position = SnapToGrid(world);
     }
 
     private void OnMouseUp()
     {
         isDragging = false;
+        transform.position = SnapToGrid(transform.position);
     }
 
     public void BeginExternalDragAt(Vector3 worldPosition)
     {
-        transform.position = worldPosition;
+        transform.position = SnapToGrid(worldPosition);
         BeginDrag();
         dragOffset = Vector3.zero;
     }
@@ -77,6 +82,15 @@ public class DraggablePlacedComponent : MonoBehaviour
         var mouse = Input.mousePosition;
         mouse.z = -targetCamera.transform.position.z;
         var world = targetCamera.ScreenToWorldPoint(mouse);
+        world.z = 0f;
+        return world;
+    }
+
+    private Vector3 SnapToGrid(Vector3 world)
+    {
+        var spacing = Mathf.Max(0.01f, gridSpacing);
+        world.x = Mathf.Round(world.x / spacing) * spacing;
+        world.y = Mathf.Round(world.y / spacing) * spacing;
         world.z = 0f;
         return world;
     }

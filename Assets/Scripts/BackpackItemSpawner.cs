@@ -11,6 +11,9 @@ public class BackpackItemSpawner : MonoBehaviour
     [SerializeField]
     private CircuitElementType elementType;
 
+    [SerializeField]
+    private float gridSpacing = 1f;
+
     private void Awake()
     {
         if (targetCamera == null)
@@ -27,8 +30,9 @@ public class BackpackItemSpawner : MonoBehaviour
             return;
         }
 
-        var spawnPosition = GetMouseWorldPosition();
+        var spawnPosition = SnapToGrid(GetMouseWorldPosition());
         var instance = Instantiate(placeablePrefab, spawnPosition, Quaternion.identity);
+        instance.transform.position = spawnPosition;
         var circuitElement = instance.GetComponent<CircuitElement>();
         if (circuitElement == null)
         {
@@ -73,6 +77,15 @@ public class BackpackItemSpawner : MonoBehaviour
         var mouse = Input.mousePosition;
         mouse.z = -targetCamera.transform.position.z;
         var world = targetCamera.ScreenToWorldPoint(mouse);
+        world.z = 0f;
+        return world;
+    }
+
+    private Vector3 SnapToGrid(Vector3 world)
+    {
+        var spacing = Mathf.Max(0.01f, gridSpacing);
+        world.x = Mathf.Round(world.x / spacing) * spacing;
+        world.y = Mathf.Round(world.y / spacing) * spacing;
         world.z = 0f;
         return world;
     }

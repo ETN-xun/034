@@ -1,5 +1,5 @@
 public enum CircuitElementType
 {
-    SineGenerator,
-    SineReceiver
+    SemiWaveGenerator,
+    SemiWaveReceiver
 }
