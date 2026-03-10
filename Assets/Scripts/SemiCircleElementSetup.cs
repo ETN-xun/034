@@ -308,15 +308,13 @@ public class SemiCircleElementSetup : MonoBehaviour
             return triangleMesh;
         }
 
-        var height = Mathf.Sqrt(3f) * 0.5f;
-        var verticalOffset = -0.08f;
         var mesh = new Mesh();
         mesh.name = "TriangleMesh";
         mesh.vertices = new[]
         {
-            new Vector3(-0.5f, -height / 3f + verticalOffset, 0f),
-            new Vector3(0.5f, -height / 3f + verticalOffset, 0f),
-            new Vector3(0f, 2f * height / 3f + verticalOffset, 0f)
+            new Vector3(-0.5f, -0.5f, 0f),
+            new Vector3(0.5f, -0.5f, 0f),
+            new Vector3(0f, 0.5f, 0f)
         };
         mesh.triangles = new[] { 0, 2, 1 };
         mesh.normals = new[] { Vector3.back, Vector3.back, Vector3.back };

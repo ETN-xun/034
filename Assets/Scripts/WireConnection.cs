@@ -33,12 +33,21 @@ public class WireConnection : MonoBehaviour
     private readonly List<Vector3> routedPolyline = new List<Vector3>();
     private readonly List<float> segmentLengths = new List<float>();
     private readonly List<Vector3> signalPoints = new List<Vector3>();
+    private readonly List<SignalSourceInfo> signalSources = new List<SignalSourceInfo>();
     private float totalLength;
     private float signalAmplitude;
     private float signalWavelength;
     private float signalFrequency;
     private SignalWaveform signalWaveform;
     private bool hasSignal;
+    private struct SignalSourceInfo
+    {
+        public SignalWaveform Waveform;
+        public float Amplitude;
+        public float Wavelength;
+        public bool IsFromTerminalA;
+    }
+
     private struct GridNode : IEquatable<GridNode>
     {
         public int X;
@@ -91,12 +100,12 @@ public class WireConnection : MonoBehaviour
     public bool TryGetSignalShape(out CircuitElementType sourceType)
     {
         sourceType = CircuitElementType.SemiWaveGenerator;
-        if (!hasSignal)
+        if (!hasSignal || signalSources.Count == 0)
         {
             return false;
         }
 
-        sourceType = GetElementTypeForWaveform(signalWaveform);
+        sourceType = GetElementTypeForWaveform(signalSources[0].Waveform);
         return true;
     }
 
@@ -120,16 +129,22 @@ public class WireConnection : MonoBehaviour
             return false;
         }
 
-        var distance = terminal == terminalA ? 0f : totalLength;
-        if (TryGetSignalSource(out _, out var sourceTerminal, out _))
+        var distanceFromA = terminal == terminalA ? 0f : totalLength;
+        var sum = 0f;
+        for (var i = 0; i < signalSources.Count; i++)
         {
-            var sourceIsA = sourceTerminal == terminalA;
-            distance = sourceIsA
-                ? (terminal == terminalA ? 0f : totalLength)
-                : (terminal == terminalB ? 0f : totalLength);
+            var source = signalSources[i];
+            var sourceDistance = source.IsFromTerminalA ? distanceFromA : totalLength - distanceFromA;
+            sum += EvaluateWave(
+                source.Waveform,
+                sourceDistance,
+                time,
+                source.Wavelength,
+                signalFrequency,
+                source.Amplitude);
         }
 
-        signalValue = EvaluateWave(signalWaveform, distance, time, signalWavelength, signalFrequency, signalAmplitude);
+        signalValue = sum;
         return true;
     }
 
@@ -690,7 +705,10 @@ public class WireConnection : MonoBehaviour
 
     private void InitializeSignalParams()
     {
-        if (!TryGetSignalSource(out var sourceElement, out var sourceTerminal, out signalWaveform))
+        signalSources.Clear();
+        TryAddSignalSource(terminalA, true);
+        TryAddSignalSource(terminalB, false);
+        if (signalSources.Count == 0)
         {
             hasSignal = false;
             signalAmplitude = 0f;
@@ -699,41 +717,39 @@ public class WireConnection : MonoBehaviour
             return;
         }
 
-        var rendererComponent = sourceElement.GetComponent<Renderer>();
+        hasSignal = true;
+        signalWaveform = signalSources[0].Waveform;
+        signalAmplitude = 0f;
+        signalWavelength = float.MaxValue;
+        for (var i = 0; i < signalSources.Count; i++)
+        {
+            var source = signalSources[i];
+            signalAmplitude = Mathf.Max(signalAmplitude, source.Amplitude);
+            signalWavelength = Mathf.Min(signalWavelength, source.Wavelength);
+        }
+    }
+
+    private void TryAddSignalSource(ConnectorTerminal terminal, bool isFromTerminalA)
+    {
+        if (!CanEmitSignal(terminal, out var waveform) || terminal == null || terminal.OwnerElement == null)
+        {
+            return;
+        }
+
+        var rendererComponent = terminal.OwnerElement.GetComponent<Renderer>();
         var radius = 0.5f;
         if (rendererComponent != null)
         {
             radius = Mathf.Max(0.05f, rendererComponent.bounds.extents.x);
         }
 
-        signalAmplitude = radius;
-        var diameter = radius * 2f;
-        signalWavelength = Mathf.Max(0.1f, diameter * 2f);
-        hasSignal = true;
-    }
-
-    private bool TryGetSignalSource(out CircuitElement sourceElement, out ConnectorTerminal sourceTerminal, out SignalWaveform waveform)
-    {
-        sourceElement = null;
-        sourceTerminal = null;
-        waveform = SignalWaveform.None;
-        if (CanEmitSignal(terminalA, out var waveformA))
+        signalSources.Add(new SignalSourceInfo
         {
-            sourceElement = terminalA.OwnerElement;
-            sourceTerminal = terminalA;
-            waveform = waveformA;
-            return true;
-        }
-
-        if (CanEmitSignal(terminalB, out var waveformB))
-        {
-            sourceElement = terminalB.OwnerElement;
-            sourceTerminal = terminalB;
-            waveform = waveformB;
-            return true;
-        }
-
-        return false;
+            Waveform = waveform,
+            Amplitude = radius,
+            Wavelength = Mathf.Max(0.1f, radius * 4f),
+            IsFromTerminalA = isFromTerminalA
+        });
     }
 
     private ConnectorTerminal GetTerminalForElement(CircuitElement element)
@@ -840,7 +856,21 @@ public class WireConnection : MonoBehaviour
 
     private float ComputeSignalOffset(float distance, float time)
     {
-        return EvaluateWave(signalWaveform, distance, time, signalWavelength, signalFrequency, signalAmplitude);
+        var sum = 0f;
+        for (var i = 0; i < signalSources.Count; i++)
+        {
+            var source = signalSources[i];
+            var sourceDistance = source.IsFromTerminalA ? distance : totalLength - distance;
+            sum += EvaluateWave(
+                source.Waveform,
+                sourceDistance,
+                time,
+                source.Wavelength,
+                signalFrequency,
+                source.Amplitude);
+        }
+
+        return sum;
     }
 
     private static float EvaluateWave(SignalWaveform waveform, float distance, float time, float wavelength, float frequency, float amplitude)
