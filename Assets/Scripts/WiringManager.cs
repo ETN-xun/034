@@ -187,7 +187,7 @@ public class WiringManager : MonoBehaviour
 
         hoveredTerminal = FindHoveredTerminal();
         UpdateCursorState();
-        if (Input.GetMouseButtonDown(2) && Test.IsGmPanelVisible)
+        if (Input.GetMouseButtonDown(2) && RuntimeGmPanel.IsVisible)
         {
             ToggleLockAtMouse();
         }

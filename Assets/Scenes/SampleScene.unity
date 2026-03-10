@@ -165,7 +165,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be2f3dbdff9e9f147b92b4715f5662ac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  targetCamera: {fileID: 0}
   prefabResourcePath: Prefabs/SemiCircleGenerator
   elementType: 0
   gridSpacing: 1
@@ -340,7 +339,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be2f3dbdff9e9f147b92b4715f5662ac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  targetCamera: {fileID: 0}
   prefabResourcePath: Prefabs/SemiCircleReceiver
   elementType: 1
   gridSpacing: 1
@@ -816,7 +814,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 856881794}
-  - component: {fileID: 856881793}
+  - component: {fileID: 856881797}
+  - component: {fileID: 856881796}
+  - component: {fileID: 856881795}
   m_Layer: 0
   m_Name: GMTool
   m_TagString: Untagged
@@ -824,30 +824,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &856881793
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 856881792}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7ec15faa83243b041a1d7607b53ea218, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  addType: 0
-  addAmount: 1
-  levelPrefabPath: Assets/Resources/Prefabs/LevelSnapshot.prefab
-  showGmPanel: 0
-  panelRect:
-    serializedVersion: 2
-    x: 40
-    y: 40
-    width: 420
-    height: 240
-  minPanelSize: {x: 340, y: 200}
-  maxPanelSize: {x: 900, y: 650}
 --- !u!4 &856881794
 Transform:
   m_ObjectHideFlags: 0
@@ -863,6 +839,57 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &856881795
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 856881792}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b08d676d4c2854b439c6a3adbd01ab36, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &856881796
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 856881792}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f356818e7fcb3af449b993d877806908, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  addType: 0
+  addAmount: 1
+  levelPrefabName: Level1
+  showGmPanel: 0
+  panelRect:
+    serializedVersion: 2
+    x: 40
+    y: 40
+    width: 420
+    height: 240
+  minPanelSize: {x: 340, y: 200}
+  maxPanelSize: {x: 900, y: 650}
+  showTypeDropdown: 0
+--- !u!114 &856881797
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 856881792}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e89d9f57a5632574094a1688e723a458, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  startLevelIndex: 1
+  winCheckInterval: 0.2
 --- !u!1 &916787465
 GameObject:
   m_ObjectHideFlags: 0
@@ -920,6 +947,10 @@ MonoBehaviour:
   signalColor: {r: 1, g: 1, b: 1, a: 1}
   signalWidth: 0.03
   signalFrequency: 0.8
+  defaultCursorWhite: {fileID: 0}
+  terminalHoverCursorYellow: {fileID: 0}
+  cursorHotspot: {x: 8, y: 8}
+  terminalPickRadius: 0.3
 --- !u!4 &916787468
 Transform:
   m_ObjectHideFlags: 0
