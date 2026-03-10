@@ -43,6 +43,16 @@ public class DraggablePlacedComponent : MonoBehaviour
         pointerDownScreenPosition = Input.mousePosition;
     }
 
+    private void Update()
+    {
+        if (!isDragging || Input.GetMouseButton(0))
+        {
+            return;
+        }
+
+        CompleteDragPlacement();
+    }
+
     private void OnMouseDrag()
     {
         if (!isPointerDown)
@@ -68,14 +78,17 @@ public class DraggablePlacedComponent : MonoBehaviour
 
     private void OnMouseUp()
     {
+        CompleteDragPlacement();
+    }
+
+    private void CompleteDragPlacement()
+    {
         isPointerDown = false;
-        EndDrag();
-        if (!isDragging)
+        if (!EndDrag())
         {
             return;
         }
 
-        isDragging = false;
         var snapped = SnapToGrid(transform.position);
         if (IsInsideBackpackArea(snapped))
         {
@@ -127,17 +140,20 @@ public class DraggablePlacedComponent : MonoBehaviour
         }
     }
 
-    private void EndDrag()
+    private bool EndDrag()
     {
         if (!isDragging)
         {
-            return;
+            return false;
         }
 
+        isDragging = false;
         if (WiringManager.Instance != null)
         {
             WiringManager.Instance.NotifyElementDragEnded();
         }
+
+        return true;
     }
 
     private Vector3 GetMouseWorldPosition()
