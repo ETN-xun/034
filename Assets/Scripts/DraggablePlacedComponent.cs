@@ -17,14 +17,8 @@ public class DraggablePlacedComponent : MonoBehaviour
     [SerializeField]
     private float dragStartThresholdPixels = 8f;
 
-    [Header("Rotation")]
-    [SerializeField]
-    private float rotationSpeed = 90f; // 每秒旋转的角度
-
     private bool isDragging;
     private bool isPointerDown;
-    private bool isRightMouseDown;
-    private bool isMouseOver;
     private Vector3 dragOffset;
     private Vector3 pointerDownScreenPosition;
 
@@ -36,48 +30,6 @@ public class DraggablePlacedComponent : MonoBehaviour
         }
 
         transform.position = SnapToGrid(transform.position);
-    }
-
-    private void Update()
-    {
-        // 检测右键按下/抬起（仅在鼠标悬停且未拖拽时）
-        if (isMouseOver && !isDragging)
-        {
-            if (Input.GetMouseButtonDown(1))
-            {
-                if (!IsLocked() && !IsWiringActive())
-                {
-                    isRightMouseDown = true;
-                }
-            }
-
-            if (Input.GetMouseButtonUp(1))
-            {
-                isRightMouseDown = false;
-            }
-        }
-        else
-        {
-            isRightMouseDown = false;
-        }
-
-        // 长按右键持续旋转
-        if (isRightMouseDown && !IsLocked())
-        {
-            float rotationAmount = rotationSpeed * Time.deltaTime;
-            transform.Rotate(0f, 0f, rotationAmount);
-        }
-    }
-
-    private void OnMouseEnter()
-    {
-        isMouseOver = true;
-    }
-
-    private void OnMouseExit()
-    {
-        isMouseOver = false;
-        isRightMouseDown = false;
     }
 
     private void OnMouseDown()
@@ -143,8 +95,6 @@ public class DraggablePlacedComponent : MonoBehaviour
     private void OnDisable()
     {
         isPointerDown = false;
-        isRightMouseDown = false;
-        isMouseOver = false;
         EndDrag();
     }
 
@@ -249,11 +199,5 @@ public class DraggablePlacedComponent : MonoBehaviour
     {
         var element = GetComponent<CircuitElement>();
         return element != null && element.IsLocked;
-    }
-
-    private bool IsWiringActive()
-    {
-        // 检测连线系统是否正在预览连线（避免右键冲突）
-        return WiringManager.Instance != null && WiringManager.Instance.AreTerminalsVisible;
     }
 }
