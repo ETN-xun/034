@@ -60,6 +60,7 @@ public class WiringManager : MonoBehaviour
 
     private Material lineMaterial;
     public bool AreTerminalsVisible => startTerminal != null;
+    public float GridSpacing => Mathf.Max(0.01f, gridSpacing);
 
     private void Awake()
     {
@@ -177,6 +178,11 @@ public class WiringManager : MonoBehaviour
     private void Update()
     {
         CleanupDestroyedWires();
+        if (activeDragCount > 0 && !Input.GetMouseButton(0))
+        {
+            activeDragCount = 0;
+        }
+
         if (activeDragCount > 0)
         {
             hoveredTerminal = null;
@@ -187,7 +193,7 @@ public class WiringManager : MonoBehaviour
 
         hoveredTerminal = FindHoveredTerminal();
         UpdateCursorState();
-        if (Input.GetMouseButtonDown(2) && Test.IsGmPanelVisible)
+        if (Input.GetMouseButtonDown(2) && RuntimeGmPanel.IsVisible)
         {
             ToggleLockAtMouse();
         }
@@ -310,7 +316,19 @@ public class WiringManager : MonoBehaviour
         }
 
         anchors.Add(SnapToGrid(GetMouseWorldPosition()));
-        var routed = WireConnection.BuildOrthogonalPolyline(anchors);
+        var obstacleRects = WireConnection.BuildElementObstacleRects();
+        var terminalTouches = new List<Vector3>();
+        if (startTerminal != null)
+        {
+            terminalTouches.Add(startTerminal.Position);
+        }
+
+        if (hoveredTerminal != null)
+        {
+            terminalTouches.Add(hoveredTerminal.Position);
+        }
+
+        var routed = WireConnection.BuildOrthogonalPolyline(anchors, obstacleRects, GridSpacing, terminalTouches);
         previewLine.positionCount = routed.Count;
         for (var i = 0; i < routed.Count; i++)
         {

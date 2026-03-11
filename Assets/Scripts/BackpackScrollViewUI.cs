@@ -1,0 +1,367 @@
+using UnityEngine;
+
+public class BackpackScrollViewUI : MonoBehaviour
+{
+    private Vector2 backpackScrollPosition;
+    private GUIStyle backpackItemStyle;
+    private Renderer backpackPanelRenderer;
+    private Texture2D blueCircleIconTexture;
+    private Texture2D redCircleIconTexture;
+    private Texture2D whiteCircleIconTexture;
+    private Texture2D blueTriangleIconTexture;
+    private Texture2D redTriangleIconTexture;
+    private Texture2D whiteTriangleIconTexture;
+    private Texture2D blueSquareIconTexture;
+    private Texture2D redSquareIconTexture;
+    private Texture2D whiteSquareIconTexture;
+    private Texture2D countPipTexture;
+    private Texture2D whiteButtonTexture;
+
+    private void OnGUI()
+    {
+        DrawBackpackScrollView();
+    }
+
+    private void DrawBackpackScrollView()
+    {
+        var panelRectScreen = GetBackpackPanelScreenRect();
+        if (panelRectScreen.width < 20f || panelRectScreen.height < 20f)
+        {
+            return;
+        }
+
+        EnsureBackpackStyles();
+        var viewRect = new Rect(panelRectScreen.x + 4f, panelRectScreen.y + 4f, panelRectScreen.width - 8f, panelRectScreen.height - 8f);
+        var entries = BackpackItemSpawner.GetInventoryEntries();
+        var rowHeight = 58f;
+        var contentHeight = Mathf.Max(viewRect.height, entries.Count * rowHeight + 4f);
+        var contentRect = new Rect(0f, 0f, Mathf.Max(1f, viewRect.width), contentHeight);
+        backpackScrollPosition = GUI.BeginScrollView(viewRect, backpackScrollPosition, contentRect, false, false);
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var rowRect = new Rect(2f, i * rowHeight + 2f, contentRect.width - 4f, rowHeight - 6f);
+            if (GUI.Button(rowRect, GUIContent.none, backpackItemStyle))
+            {
+                BackpackItemSpawner.TrySpawnFromInventory(entry.type, GetFieldSpawnPosition());
+            }
+
+            var iconSize = Mathf.Min(rowRect.height - 8f, rowRect.width - 12f);
+            var iconRect = new Rect(
+                rowRect.x + (rowRect.width - iconSize) * 0.5f,
+                rowRect.y + (rowRect.height - iconSize) * 0.5f,
+                iconSize,
+                iconSize);
+            GUI.DrawTexture(iconRect, GetInventoryIconTexture(entry.type), ScaleMode.ScaleToFit, true);
+            DrawCountPips(rowRect, entry.count);
+        }
+
+        GUI.EndScrollView();
+    }
+
+    private Rect GetBackpackPanelScreenRect()
+    {
+        if (backpackPanelRenderer == null)
+        {
+            var panel = GameObject.Find("BackpackPanel");
+            if (panel != null)
+            {
+                backpackPanelRenderer = panel.GetComponent<Renderer>();
+            }
+        }
+
+        if (backpackPanelRenderer == null || Camera.main == null)
+        {
+            var fallbackWidth = Screen.width * 0.22f;
+            return new Rect(0f, 0f, fallbackWidth, Screen.height);
+        }
+
+        var bounds = backpackPanelRenderer.bounds;
+        var points = new Vector3[4]
+        {
+            new Vector3(bounds.min.x, bounds.min.y, 0f),
+            new Vector3(bounds.min.x, bounds.max.y, 0f),
+            new Vector3(bounds.max.x, bounds.min.y, 0f),
+            new Vector3(bounds.max.x, bounds.max.y, 0f)
+        };
+
+        var xMin = float.PositiveInfinity;
+        var xMax = float.NegativeInfinity;
+        var yMin = float.PositiveInfinity;
+        var yMax = float.NegativeInfinity;
+        for (var i = 0; i < points.Length; i++)
+        {
+            var screen = Camera.main.WorldToScreenPoint(points[i]);
+            xMin = Mathf.Min(xMin, screen.x);
+            xMax = Mathf.Max(xMax, screen.x);
+            yMin = Mathf.Min(yMin, screen.y);
+            yMax = Mathf.Max(yMax, screen.y);
+        }
+
+        var left = Mathf.Clamp(xMin, 0f, Screen.width);
+        var right = Mathf.Clamp(xMax, 0f, Screen.width);
+        var top = Mathf.Clamp(Screen.height - yMax, 0f, Screen.height);
+        var bottom = Mathf.Clamp(Screen.height - yMin, 0f, Screen.height);
+        return Rect.MinMaxRect(left, top, right, bottom);
+    }
+
+    private Vector3 GetFieldSpawnPosition()
+    {
+        if (Camera.main == null)
+        {
+            return Vector3.zero;
+        }
+
+        var spawnViewport = new Vector3(0.62f, 0.5f, -Camera.main.transform.position.z);
+        var world = Camera.main.ViewportToWorldPoint(spawnViewport);
+        world.z = 0f;
+        return world;
+    }
+
+    private void EnsureBackpackStyles()
+    {
+        if (backpackItemStyle != null)
+        {
+            return;
+        }
+
+        backpackItemStyle = new GUIStyle(GUI.skin.button)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 1
+        };
+        backpackItemStyle.normal.textColor = new Color(0f, 0f, 0f, 0f);
+        backpackItemStyle.hover.textColor = new Color(0f, 0f, 0f, 0f);
+        backpackItemStyle.active.textColor = new Color(0f, 0f, 0f, 0f);
+        whiteButtonTexture = CreateSolidTexture(new Color(1f, 1f, 1f, 1f));
+        backpackItemStyle.normal.background = whiteButtonTexture;
+        backpackItemStyle.hover.background = whiteButtonTexture;
+        backpackItemStyle.active.background = whiteButtonTexture;
+        backpackItemStyle.focused.background = whiteButtonTexture;
+    }
+
+    private Texture2D GetInventoryIconTexture(CircuitElementType type)
+    {
+        switch (type)
+        {
+            case CircuitElementType.SemiWaveReceiver:
+                if (redCircleIconTexture == null)
+                {
+                    redCircleIconTexture = CreateCircleTexture(64, new Color(1f, 0.2f, 0.2f, 1f));
+                }
+
+                return redCircleIconTexture;
+            case CircuitElementType.SemiWaveConverter:
+                if (whiteCircleIconTexture == null)
+                {
+                    whiteCircleIconTexture = CreateCircleTexture(64, new Color(1f, 1f, 1f, 1f));
+                }
+
+                return whiteCircleIconTexture;
+            case CircuitElementType.TriangleWaveGenerator:
+                if (blueTriangleIconTexture == null)
+                {
+                    blueTriangleIconTexture = CreateTriangleTexture(64, new Color(0.2f, 0.45f, 1f, 1f));
+                }
+
+                return blueTriangleIconTexture;
+            case CircuitElementType.TriangleWaveReceiver:
+                if (redTriangleIconTexture == null)
+                {
+                    redTriangleIconTexture = CreateTriangleTexture(64, new Color(1f, 0.2f, 0.2f, 1f));
+                }
+
+                return redTriangleIconTexture;
+            case CircuitElementType.TriangleWaveConverter:
+                if (whiteTriangleIconTexture == null)
+                {
+                    whiteTriangleIconTexture = CreateTriangleTexture(64, new Color(1f, 1f, 1f, 1f));
+                }
+
+                return whiteTriangleIconTexture;
+            case CircuitElementType.SquareWaveGenerator:
+                if (blueSquareIconTexture == null)
+                {
+                    blueSquareIconTexture = CreateSquareTexture(64, new Color(0.2f, 0.45f, 1f, 1f));
+                }
+
+                return blueSquareIconTexture;
+            case CircuitElementType.SquareWaveReceiver:
+                if (redSquareIconTexture == null)
+                {
+                    redSquareIconTexture = CreateSquareTexture(64, new Color(1f, 0.2f, 0.2f, 1f));
+                }
+
+                return redSquareIconTexture;
+            case CircuitElementType.SquareWaveConverter:
+                if (whiteSquareIconTexture == null)
+                {
+                    whiteSquareIconTexture = CreateSquareTexture(64, new Color(1f, 1f, 1f, 1f));
+                }
+
+                return whiteSquareIconTexture;
+            default:
+                if (blueCircleIconTexture == null)
+                {
+                    blueCircleIconTexture = CreateCircleTexture(64, new Color(0.2f, 0.45f, 1f, 1f));
+                }
+
+                return blueCircleIconTexture;
+        }
+    }
+
+    private void DrawCountPips(Rect rowRect, int count)
+    {
+        if (count <= 1)
+        {
+            return;
+        }
+
+        if (countPipTexture == null)
+        {
+            countPipTexture = CreateCircleTexture(16, new Color(1f, 0.95f, 0.3f, 1f));
+        }
+
+        var maxPips = 6;
+        var pipCount = Mathf.Clamp(count - 1, 1, maxPips);
+        var size = 8f;
+        var spacing = 3f;
+        var total = pipCount * size + (pipCount - 1) * spacing;
+        var x = rowRect.xMax - total - 6f;
+        var y = rowRect.yMax - size - 5f;
+        for (var i = 0; i < pipCount; i++)
+        {
+            var pipRect = new Rect(x + i * (size + spacing), y, size, size);
+            GUI.DrawTexture(pipRect, countPipTexture, ScaleMode.StretchToFill, true);
+        }
+    }
+
+    private Texture2D CreateCircleTexture(int size, Color fillColor)
+    {
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+
+        var radius = (size - 1) * 0.5f;
+        var center = new Vector2(radius, radius);
+        var edge = Mathf.Max(1f, size * 0.06f);
+        var outline = new Color(0f, 0f, 0f, 0.75f);
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                var delta = new Vector2(x, y) - center;
+                var distance = delta.magnitude;
+                if (distance > radius)
+                {
+                    texture.SetPixel(x, y, Color.clear);
+                    continue;
+                }
+
+                var color = distance >= radius - edge ? outline : fillColor;
+                texture.SetPixel(x, y, color);
+            }
+        }
+
+        texture.Apply(false, false);
+        return texture;
+    }
+
+    private Texture2D CreateSquareTexture(int size, Color fillColor)
+    {
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+        var margin = Mathf.Max(2, Mathf.RoundToInt(size * 0.12f));
+        var outline = new Color(0f, 0f, 0f, 0.75f);
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                var inside = x >= margin && x < size - margin && y >= margin && y < size - margin;
+                if (!inside)
+                {
+                    texture.SetPixel(x, y, Color.clear);
+                    continue;
+                }
+
+                var border = x <= margin + 1 || x >= size - margin - 2 || y <= margin + 1 || y >= size - margin - 2;
+                texture.SetPixel(x, y, border ? outline : fillColor);
+            }
+        }
+
+        texture.Apply(false, false);
+        return texture;
+    }
+
+    private Texture2D CreateTriangleTexture(int size, Color fillColor)
+    {
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+        var p0 = new Vector2(size * 0.5f, size * 0.88f);
+        var p1 = new Vector2(size * 0.12f, size * 0.18f);
+        var p2 = new Vector2(size * 0.88f, size * 0.18f);
+        var outline = new Color(0f, 0f, 0f, 0.75f);
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                var point = new Vector2(x + 0.5f, y + 0.5f);
+                if (!IsPointInTriangle(point, p0, p1, p2))
+                {
+                    texture.SetPixel(x, y, Color.clear);
+                    continue;
+                }
+
+                var edgeDistance = Mathf.Min(
+                    DistancePointToLine(point, p0, p1),
+                    Mathf.Min(DistancePointToLine(point, p1, p2), DistancePointToLine(point, p2, p0)));
+                texture.SetPixel(x, y, edgeDistance <= 1.6f ? outline : fillColor);
+            }
+        }
+
+        texture.Apply(false, false);
+        return texture;
+    }
+
+    private bool IsPointInTriangle(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
+    {
+        var s1 = Sign(p, a, b);
+        var s2 = Sign(p, b, c);
+        var s3 = Sign(p, c, a);
+        var hasNeg = (s1 < 0f) || (s2 < 0f) || (s3 < 0f);
+        var hasPos = (s1 > 0f) || (s2 > 0f) || (s3 > 0f);
+        return !(hasNeg && hasPos);
+    }
+
+    private float Sign(Vector2 p1, Vector2 p2, Vector2 p3)
+    {
+        return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+    }
+
+    private float DistancePointToLine(Vector2 point, Vector2 a, Vector2 b)
+    {
+        var ab = b - a;
+        var length = Mathf.Max(0.0001f, ab.magnitude);
+        return Mathf.Abs(ab.y * point.x - ab.x * point.y + b.x * a.y - b.y * a.x) / length;
+    }
+
+    private Texture2D CreateSolidTexture(Color color)
+    {
+        var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+        for (var y = 0; y < 2; y++)
+        {
+            for (var x = 0; x < 2; x++)
+            {
+                texture.SetPixel(x, y, color);
+            }
+        }
+
+        texture.Apply(false, false);
+        return texture;
+    }
+}

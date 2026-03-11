@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System;
 
 public class WireConnection : MonoBehaviour
 {
@@ -32,12 +33,50 @@ public class WireConnection : MonoBehaviour
     private readonly List<Vector3> routedPolyline = new List<Vector3>();
     private readonly List<float> segmentLengths = new List<float>();
     private readonly List<Vector3> signalPoints = new List<Vector3>();
+    private readonly List<SignalSourceInfo> signalSources = new List<SignalSourceInfo>();
     private float totalLength;
     private float signalAmplitude;
     private float signalWavelength;
     private float signalFrequency;
     private SignalWaveform signalWaveform;
     private bool hasSignal;
+    private struct SignalSourceInfo
+    {
+        public SignalWaveform Waveform;
+        public float Amplitude;
+        public float Wavelength;
+        public bool IsFromTerminalA;
+    }
+
+    private struct GridNode : IEquatable<GridNode>
+    {
+        public int X;
+        public int Y;
+
+        public GridNode(int x, int y)
+        {
+            X = x;
+            Y = y;
+        }
+
+        public bool Equals(GridNode other)
+        {
+            return X == other.X && Y == other.Y;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is GridNode other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                return (X * 397) ^ Y;
+            }
+        }
+    }
     public bool IsLocked => isLocked;
 
     public bool IsConnectedToElement(CircuitElement element)
@@ -61,12 +100,12 @@ public class WireConnection : MonoBehaviour
     public bool TryGetSignalShape(out CircuitElementType sourceType)
     {
         sourceType = CircuitElementType.SemiWaveGenerator;
-        if (!hasSignal)
+        if (!hasSignal || signalSources.Count == 0)
         {
             return false;
         }
 
-        sourceType = GetElementTypeForWaveform(signalWaveform);
+        sourceType = GetElementTypeForWaveform(signalSources[0].Waveform);
         return true;
     }
 
@@ -90,16 +129,22 @@ public class WireConnection : MonoBehaviour
             return false;
         }
 
-        var distance = terminal == terminalA ? 0f : totalLength;
-        if (TryGetSignalSource(out _, out var sourceTerminal, out _))
+        var distanceFromA = terminal == terminalA ? 0f : totalLength;
+        var sum = 0f;
+        for (var i = 0; i < signalSources.Count; i++)
         {
-            var sourceIsA = sourceTerminal == terminalA;
-            distance = sourceIsA
-                ? (terminal == terminalA ? 0f : totalLength)
-                : (terminal == terminalB ? 0f : totalLength);
+            var source = signalSources[i];
+            var sourceDistance = source.IsFromTerminalA ? distanceFromA : totalLength - distanceFromA;
+            sum += EvaluateWave(
+                source.Waveform,
+                sourceDistance,
+                time,
+                source.Wavelength,
+                signalFrequency,
+                source.Amplitude);
         }
 
-        signalValue = EvaluateWave(signalWaveform, distance, time, signalWavelength, signalFrequency, signalAmplitude);
+        signalValue = sum;
         return true;
     }
 
@@ -175,7 +220,19 @@ public class WireConnection : MonoBehaviour
         currentPolyline.Add(end);
 
         routedPolyline.Clear();
-        var routed = BuildOrthogonalPolyline(currentPolyline);
+        var obstacleRects = BuildElementObstacleRects();
+        var terminalTouches = new List<Vector3>();
+        if (terminalA != null)
+        {
+            terminalTouches.Add(terminalA.Position);
+        }
+
+        if (terminalB != null)
+        {
+            terminalTouches.Add(terminalB.Position);
+        }
+
+        var routed = BuildOrthogonalPolyline(currentPolyline, obstacleRects, GetGridSpacing(), terminalTouches);
         routedPolyline.AddRange(routed);
         lineRenderer.positionCount = routedPolyline.Count;
         if (outlineRenderer != null)
@@ -230,7 +287,11 @@ public class WireConnection : MonoBehaviour
         return minDistance;
     }
 
-    public static List<Vector3> BuildOrthogonalPolyline(IReadOnlyList<Vector3> anchors)
+    public static List<Vector3> BuildOrthogonalPolyline(
+        IReadOnlyList<Vector3> anchors,
+        IReadOnlyList<Rect> obstacleRects = null,
+        float gridSpacing = 1f,
+        IReadOnlyList<Vector3> allowedTouchPoints = null)
     {
         var result = new List<Vector3>();
         if (anchors == null || anchors.Count == 0)
@@ -238,12 +299,14 @@ public class WireConnection : MonoBehaviour
             return result;
         }
 
-        result.Add(new Vector3(anchors[0].x, anchors[0].y, 0f));
+        var safeSpacing = Mathf.Max(0.01f, gridSpacing);
+        var allowedTouchNodes = BuildAllowedTouchNodes(allowedTouchPoints, safeSpacing);
+        result.Add(SnapToGrid(anchors[0], safeSpacing));
         for (var i = 1; i < anchors.Count; i++)
         {
             var from = result[result.Count - 1];
-            var to = new Vector3(anchors[i].x, anchors[i].y, 0f);
-            AddOrthogonalSegment(result, from, to);
+            var to = SnapToGrid(anchors[i], safeSpacing);
+            AddRoutedSegment(result, from, to, obstacleRects, safeSpacing, allowedTouchNodes);
         }
 
         return result;
@@ -262,6 +325,313 @@ public class WireConnection : MonoBehaviour
         renderer.sortingOrder = sortingOrder;
     }
 
+    private static void AddRoutedSegment(
+        List<Vector3> points,
+        Vector3 from,
+        Vector3 to,
+        IReadOnlyList<Rect> obstacleRects,
+        float gridSpacing,
+        HashSet<GridNode> allowedTouchNodes)
+    {
+        if (TryBuildPathSegment(from, to, obstacleRects, gridSpacing, allowedTouchNodes, out var routedPath))
+        {
+            for (var i = 0; i < routedPath.Count; i++)
+            {
+                AddPointIfNeeded(points, routedPath[i]);
+            }
+
+            return;
+        }
+
+        var hasObstacles = obstacleRects != null && obstacleRects.Count > 0;
+        if (hasObstacles)
+        {
+            return;
+        }
+
+        AddOrthogonalSegment(points, from, to);
+    }
+
+    private static bool TryBuildPathSegment(
+        Vector3 from,
+        Vector3 to,
+        IReadOnlyList<Rect> obstacleRects,
+        float gridSpacing,
+        HashSet<GridNode> allowedTouchNodes,
+        out List<Vector3> routedPath)
+    {
+        routedPath = null;
+        var safeSpacing = Mathf.Max(0.01f, gridSpacing);
+        var start = WorldToNode(from, safeSpacing);
+        var goal = WorldToNode(to, safeSpacing);
+        if (start.Equals(goal))
+        {
+            routedPath = new List<Vector3> { NodeToWorld(goal, safeSpacing) };
+            return true;
+        }
+
+        var boundsMinX = Mathf.Min(start.X, goal.X);
+        var boundsMaxX = Mathf.Max(start.X, goal.X);
+        var boundsMinY = Mathf.Min(start.Y, goal.Y);
+        var boundsMaxY = Mathf.Max(start.Y, goal.Y);
+        if (obstacleRects != null)
+        {
+            for (var i = 0; i < obstacleRects.Count; i++)
+            {
+                var rect = obstacleRects[i];
+                var nodeMinX = Mathf.FloorToInt((rect.xMin - 0.0001f) / safeSpacing);
+                var nodeMaxX = Mathf.CeilToInt((rect.xMax + 0.0001f) / safeSpacing);
+                var nodeMinY = Mathf.FloorToInt((rect.yMin - 0.0001f) / safeSpacing);
+                var nodeMaxY = Mathf.CeilToInt((rect.yMax + 0.0001f) / safeSpacing);
+                boundsMinX = Mathf.Min(boundsMinX, nodeMinX);
+                boundsMaxX = Mathf.Max(boundsMaxX, nodeMaxX);
+                boundsMinY = Mathf.Min(boundsMinY, nodeMinY);
+                boundsMaxY = Mathf.Max(boundsMaxY, nodeMaxY);
+            }
+        }
+
+        var margin = 4;
+        boundsMinX -= margin;
+        boundsMaxX += margin;
+        boundsMinY -= margin;
+        boundsMaxY += margin;
+
+        var frontier = new Queue<GridNode>();
+        var visited = new HashSet<GridNode>();
+        var cameFrom = new Dictionary<GridNode, GridNode>();
+        frontier.Enqueue(start);
+        visited.Add(start);
+        var found = false;
+
+        while (frontier.Count > 0)
+        {
+            var current = frontier.Dequeue();
+            if (current.Equals(goal))
+            {
+                found = true;
+                break;
+            }
+
+            EnqueueNeighbor(current.X + 1, current.Y, current);
+            EnqueueNeighbor(current.X - 1, current.Y, current);
+            EnqueueNeighbor(current.X, current.Y + 1, current);
+            EnqueueNeighbor(current.X, current.Y - 1, current);
+        }
+
+        if (!found)
+        {
+            return false;
+        }
+
+        var nodePath = new List<GridNode>();
+        var cursor = goal;
+        nodePath.Add(cursor);
+        while (!cursor.Equals(start))
+        {
+            cursor = cameFrom[cursor];
+            nodePath.Add(cursor);
+        }
+
+        nodePath.Reverse();
+        routedPath = new List<Vector3>(nodePath.Count);
+        for (var i = 0; i < nodePath.Count; i++)
+        {
+            routedPath.Add(NodeToWorld(nodePath[i], safeSpacing));
+        }
+
+        SimplifyCollinear(routedPath);
+        return true;
+
+        void EnqueueNeighbor(int x, int y, GridNode parent)
+        {
+            if (x < boundsMinX || x > boundsMaxX || y < boundsMinY || y > boundsMaxY)
+            {
+                return;
+            }
+
+            var next = new GridNode(x, y);
+            if (visited.Contains(next))
+            {
+                return;
+            }
+
+            var fromPoint = NodeToWorld(parent, safeSpacing);
+            var toPoint = NodeToWorld(next, safeSpacing);
+            if (SegmentViolatesObstacles(fromPoint, toPoint, obstacleRects, safeSpacing, allowedTouchNodes))
+            {
+                return;
+            }
+
+            visited.Add(next);
+            cameFrom[next] = parent;
+            frontier.Enqueue(next);
+        }
+    }
+
+    private static HashSet<GridNode> BuildAllowedTouchNodes(IReadOnlyList<Vector3> allowedTouchPoints, float gridSpacing)
+    {
+        var result = new HashSet<GridNode>();
+        if (allowedTouchPoints == null)
+        {
+            return result;
+        }
+
+        for (var i = 0; i < allowedTouchPoints.Count; i++)
+        {
+            result.Add(WorldToNode(allowedTouchPoints[i], gridSpacing));
+        }
+
+        return result;
+    }
+
+    private static bool SegmentViolatesObstacles(
+        Vector3 a,
+        Vector3 b,
+        IReadOnlyList<Rect> obstacleRects,
+        float gridSpacing,
+        HashSet<GridNode> allowedTouchNodes)
+    {
+        if (obstacleRects == null || obstacleRects.Count == 0)
+        {
+            return false;
+        }
+
+        const float epsilon = 0.0001f;
+        var horizontal = Mathf.Abs(a.y - b.y) < epsilon;
+        var vertical = Mathf.Abs(a.x - b.x) < epsilon;
+        if (!horizontal && !vertical)
+        {
+            return true;
+        }
+
+        var allowedA = allowedTouchNodes != null && allowedTouchNodes.Contains(WorldToNode(a, gridSpacing));
+        var allowedB = allowedTouchNodes != null && allowedTouchNodes.Contains(WorldToNode(b, gridSpacing));
+
+        for (var i = 0; i < obstacleRects.Count; i++)
+        {
+            var rect = obstacleRects[i];
+            if (horizontal)
+            {
+                var y = a.y;
+                if (y < rect.yMin - epsilon || y > rect.yMax + epsilon)
+                {
+                    continue;
+                }
+
+                var minX = Mathf.Min(a.x, b.x);
+                var maxX = Mathf.Max(a.x, b.x);
+                var overlapMin = Mathf.Max(minX, rect.xMin);
+                var overlapMax = Mathf.Min(maxX, rect.xMax);
+                if (overlapMin > overlapMax + epsilon)
+                {
+                    continue;
+                }
+
+                var overlapLength = overlapMax - overlapMin;
+                if (overlapLength > epsilon)
+                {
+                    return true;
+                }
+
+                var touch = new Vector3(overlapMin, y, 0f);
+                if (!IsAllowedSingleTouch(touch, a, b, allowedA, allowedB, epsilon))
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            var x = a.x;
+            if (x < rect.xMin - epsilon || x > rect.xMax + epsilon)
+            {
+                continue;
+            }
+
+            var minY = Mathf.Min(a.y, b.y);
+            var maxY = Mathf.Max(a.y, b.y);
+            var overlapMinY = Mathf.Max(minY, rect.yMin);
+            var overlapMaxY = Mathf.Min(maxY, rect.yMax);
+            if (overlapMinY > overlapMaxY + epsilon)
+            {
+                continue;
+            }
+
+            var overlapLengthY = overlapMaxY - overlapMinY;
+            if (overlapLengthY > epsilon)
+            {
+                return true;
+            }
+
+            var touchPoint = new Vector3(x, overlapMinY, 0f);
+            if (!IsAllowedSingleTouch(touchPoint, a, b, allowedA, allowedB, epsilon))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsAllowedSingleTouch(Vector3 touch, Vector3 a, Vector3 b, bool allowedA, bool allowedB, float epsilon)
+    {
+        if (allowedA && (touch - a).sqrMagnitude <= epsilon * epsilon)
+        {
+            return true;
+        }
+
+        if (allowedB && (touch - b).sqrMagnitude <= epsilon * epsilon)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static GridNode WorldToNode(Vector3 point, float gridSpacing)
+    {
+        var safeSpacing = Mathf.Max(0.01f, gridSpacing);
+        return new GridNode(
+            Mathf.RoundToInt(point.x / safeSpacing),
+            Mathf.RoundToInt(point.y / safeSpacing));
+    }
+
+    private static Vector3 NodeToWorld(GridNode node, float gridSpacing)
+    {
+        var safeSpacing = Mathf.Max(0.01f, gridSpacing);
+        return new Vector3(node.X * safeSpacing, node.Y * safeSpacing, 0f);
+    }
+
+    private static Vector3 SnapToGrid(Vector3 point, float gridSpacing)
+    {
+        var safeSpacing = Mathf.Max(0.01f, gridSpacing);
+        return new Vector3(
+            Mathf.Round(point.x / safeSpacing) * safeSpacing,
+            Mathf.Round(point.y / safeSpacing) * safeSpacing,
+            0f);
+    }
+
+    private static void SimplifyCollinear(List<Vector3> points)
+    {
+        if (points == null || points.Count < 3)
+        {
+            return;
+        }
+
+        for (var i = points.Count - 2; i >= 1; i--)
+        {
+            var prev = points[i - 1];
+            var curr = points[i];
+            var next = points[i + 1];
+            var horizontal = Mathf.Abs(prev.y - curr.y) < 0.0001f && Mathf.Abs(curr.y - next.y) < 0.0001f;
+            var vertical = Mathf.Abs(prev.x - curr.x) < 0.0001f && Mathf.Abs(curr.x - next.x) < 0.0001f;
+            if (horizontal || vertical)
+            {
+                points.RemoveAt(i);
+            }
+        }
+    }
+
     private static void AddOrthogonalSegment(List<Vector3> points, Vector3 from, Vector3 to)
     {
         if (Mathf.Approximately(from.x, to.x) || Mathf.Approximately(from.y, to.y))
@@ -273,6 +643,34 @@ public class WireConnection : MonoBehaviour
         var corner = new Vector3(to.x, from.y, 0f);
         AddPointIfNeeded(points, corner);
         AddPointIfNeeded(points, to);
+    }
+
+    public static List<Rect> BuildElementObstacleRects()
+    {
+        var result = new List<Rect>();
+        var elements = FindObjectsOfType<CircuitElement>();
+        for (var i = 0; i < elements.Length; i++)
+        {
+            var element = elements[i];
+            if (element == null || !element.isActiveAndEnabled)
+            {
+                continue;
+            }
+
+            result.Add(element.GetOccupiedRect());
+        }
+
+        return result;
+    }
+
+    private float GetGridSpacing()
+    {
+        if (WiringManager.Instance == null)
+        {
+            return 1f;
+        }
+
+        return WiringManager.Instance.GridSpacing;
     }
 
     private static void AddPointIfNeeded(List<Vector3> points, Vector3 point)
@@ -307,7 +705,10 @@ public class WireConnection : MonoBehaviour
 
     private void InitializeSignalParams()
     {
-        if (!TryGetSignalSource(out var sourceElement, out var sourceTerminal, out signalWaveform))
+        signalSources.Clear();
+        TryAddSignalSource(terminalA, true);
+        TryAddSignalSource(terminalB, false);
+        if (signalSources.Count == 0)
         {
             hasSignal = false;
             signalAmplitude = 0f;
@@ -316,41 +717,39 @@ public class WireConnection : MonoBehaviour
             return;
         }
 
-        var rendererComponent = sourceElement.GetComponent<Renderer>();
+        hasSignal = true;
+        signalWaveform = signalSources[0].Waveform;
+        signalAmplitude = 0f;
+        signalWavelength = float.MaxValue;
+        for (var i = 0; i < signalSources.Count; i++)
+        {
+            var source = signalSources[i];
+            signalAmplitude = Mathf.Max(signalAmplitude, source.Amplitude);
+            signalWavelength = Mathf.Min(signalWavelength, source.Wavelength);
+        }
+    }
+
+    private void TryAddSignalSource(ConnectorTerminal terminal, bool isFromTerminalA)
+    {
+        if (!CanEmitSignal(terminal, out var waveform) || terminal == null || terminal.OwnerElement == null)
+        {
+            return;
+        }
+
+        var rendererComponent = terminal.OwnerElement.GetComponent<Renderer>();
         var radius = 0.5f;
         if (rendererComponent != null)
         {
             radius = Mathf.Max(0.05f, rendererComponent.bounds.extents.x);
         }
 
-        signalAmplitude = radius;
-        var diameter = radius * 2f;
-        signalWavelength = Mathf.Max(0.1f, diameter * 2f);
-        hasSignal = true;
-    }
-
-    private bool TryGetSignalSource(out CircuitElement sourceElement, out ConnectorTerminal sourceTerminal, out SignalWaveform waveform)
-    {
-        sourceElement = null;
-        sourceTerminal = null;
-        waveform = SignalWaveform.None;
-        if (CanEmitSignal(terminalA, out var waveformA))
+        signalSources.Add(new SignalSourceInfo
         {
-            sourceElement = terminalA.OwnerElement;
-            sourceTerminal = terminalA;
-            waveform = waveformA;
-            return true;
-        }
-
-        if (CanEmitSignal(terminalB, out var waveformB))
-        {
-            sourceElement = terminalB.OwnerElement;
-            sourceTerminal = terminalB;
-            waveform = waveformB;
-            return true;
-        }
-
-        return false;
+            Waveform = waveform,
+            Amplitude = radius,
+            Wavelength = Mathf.Max(0.1f, radius * 4f),
+            IsFromTerminalA = isFromTerminalA
+        });
     }
 
     private ConnectorTerminal GetTerminalForElement(CircuitElement element)
@@ -457,7 +856,21 @@ public class WireConnection : MonoBehaviour
 
     private float ComputeSignalOffset(float distance, float time)
     {
-        return EvaluateWave(signalWaveform, distance, time, signalWavelength, signalFrequency, signalAmplitude);
+        var sum = 0f;
+        for (var i = 0; i < signalSources.Count; i++)
+        {
+            var source = signalSources[i];
+            var sourceDistance = source.IsFromTerminalA ? distance : totalLength - distance;
+            sum += EvaluateWave(
+                source.Waveform,
+                sourceDistance,
+                time,
+                source.Wavelength,
+                signalFrequency,
+                source.Amplitude);
+        }
+
+        return sum;
     }
 
     private static float EvaluateWave(SignalWaveform waveform, float distance, float time, float wavelength, float frequency, float amplitude)
