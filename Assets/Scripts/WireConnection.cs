@@ -78,6 +78,8 @@ public class WireConnection : MonoBehaviour
         }
     }
     public bool IsLocked => isLocked;
+    public ConnectorTerminal TerminalA => terminalA;
+    public ConnectorTerminal TerminalB => terminalB;
 
     public bool IsConnectedToElement(CircuitElement element)
     {
@@ -285,6 +287,116 @@ public class WireConnection : MonoBehaviour
         }
 
         return minDistance;
+    }
+
+    public bool IsConnectedToTerminal(ConnectorTerminal terminal)
+    {
+        if (terminal == null)
+        {
+            return false;
+        }
+
+        return terminal == terminalA || terminal == terminalB;
+    }
+
+    public bool TryGetJunctionPoint(Vector3 worldPoint, float maxDistance, float gridSpacing, out Vector3 junctionPoint)
+    {
+        junctionPoint = default;
+        if (routedPolyline.Count < 2)
+        {
+            return false;
+        }
+
+        var nearestSegmentIndex = -1;
+        var nearestDistance = maxDistance;
+        var nearestPoint = default(Vector3);
+        for (var i = 0; i < routedPolyline.Count - 1; i++)
+        {
+            var a = routedPolyline[i];
+            var b = routedPolyline[i + 1];
+            var projection = GetClosestPointOnOrthogonalSegment(worldPoint, a, b);
+            var distance = Vector3.Distance(worldPoint, projection);
+            if (distance > nearestDistance)
+            {
+                continue;
+            }
+
+            nearestDistance = distance;
+            nearestSegmentIndex = i;
+            nearestPoint = projection;
+        }
+
+        if (nearestSegmentIndex < 0)
+        {
+            return false;
+        }
+
+        var aPoint = routedPolyline[nearestSegmentIndex];
+        var bPoint = routedPolyline[nearestSegmentIndex + 1];
+        var snapped = SnapToGrid(nearestPoint, gridSpacing);
+        snapped = ClampPointToSegment(snapped, aPoint, bPoint);
+        if ((snapped - routedPolyline[0]).sqrMagnitude <= 0.0001f || (snapped - routedPolyline[routedPolyline.Count - 1]).sqrMagnitude <= 0.0001f)
+        {
+            return false;
+        }
+
+        junctionPoint = snapped;
+        return true;
+    }
+
+    public bool TryBuildSplitBendPoints(Vector3 splitPoint, out List<Vector3> bendsFromA, out List<Vector3> bendsFromB)
+    {
+        bendsFromA = new List<Vector3>();
+        bendsFromB = new List<Vector3>();
+        if (routedPolyline.Count < 2)
+        {
+            return false;
+        }
+
+        var path = new List<Vector3>(routedPolyline);
+        var splitIndex = -1;
+        for (var i = 0; i < path.Count; i++)
+        {
+            if ((path[i] - splitPoint).sqrMagnitude <= 0.0001f)
+            {
+                splitIndex = i;
+                break;
+            }
+        }
+
+        if (splitIndex < 0)
+        {
+            for (var i = 0; i < path.Count - 1; i++)
+            {
+                var a = path[i];
+                var b = path[i + 1];
+                if (!IsPointOnOrthogonalSegment(splitPoint, a, b))
+                {
+                    continue;
+                }
+
+                path.Insert(i + 1, splitPoint);
+                splitIndex = i + 1;
+                break;
+            }
+        }
+
+        if (splitIndex <= 0 || splitIndex >= path.Count - 1)
+        {
+            return false;
+        }
+
+        for (var i = 1; i < splitIndex; i++)
+        {
+            bendsFromA.Add(path[i]);
+        }
+
+        for (var i = splitIndex + 1; i < path.Count - 1; i++)
+        {
+            bendsFromB.Add(path[i]);
+        }
+
+        return true;
     }
 
     public static List<Vector3> BuildOrthogonalPolyline(
@@ -645,6 +757,90 @@ public class WireConnection : MonoBehaviour
         AddPointIfNeeded(points, to);
     }
 
+    private static Vector3 GetClosestPointOnOrthogonalSegment(Vector3 point, Vector3 a, Vector3 b)
+    {
+        const float epsilon = 0.0001f;
+        if (Mathf.Abs(a.x - b.x) <= epsilon)
+        {
+            var minY = Mathf.Min(a.y, b.y);
+            var maxY = Mathf.Max(a.y, b.y);
+            return new Vector3(a.x, Mathf.Clamp(point.y, minY, maxY), 0f);
+        }
+
+        if (Mathf.Abs(a.y - b.y) <= epsilon)
+        {
+            var minX = Mathf.Min(a.x, b.x);
+            var maxX = Mathf.Max(a.x, b.x);
+            return new Vector3(Mathf.Clamp(point.x, minX, maxX), a.y, 0f);
+        }
+
+        return GetClosestPointOnAnySegment(point, a, b);
+    }
+
+    private static Vector3 GetClosestPointOnAnySegment(Vector3 point, Vector3 a, Vector3 b)
+    {
+        var ab = b - a;
+        var sqrLength = ab.sqrMagnitude;
+        if (sqrLength <= 0.00001f)
+        {
+            return a;
+        }
+
+        var t = Vector3.Dot(point - a, ab) / sqrLength;
+        t = Mathf.Clamp01(t);
+        return a + t * ab;
+    }
+
+    private static bool IsPointOnOrthogonalSegment(Vector3 point, Vector3 a, Vector3 b)
+    {
+        const float epsilon = 0.0001f;
+        if (Mathf.Abs(a.x - b.x) <= epsilon)
+        {
+            if (Mathf.Abs(point.x - a.x) > epsilon)
+            {
+                return false;
+            }
+
+            var minY = Mathf.Min(a.y, b.y) - epsilon;
+            var maxY = Mathf.Max(a.y, b.y) + epsilon;
+            return point.y >= minY && point.y <= maxY;
+        }
+
+        if (Mathf.Abs(a.y - b.y) <= epsilon)
+        {
+            if (Mathf.Abs(point.y - a.y) > epsilon)
+            {
+                return false;
+            }
+
+            var minX = Mathf.Min(a.x, b.x) - epsilon;
+            var maxX = Mathf.Max(a.x, b.x) + epsilon;
+            return point.x >= minX && point.x <= maxX;
+        }
+
+        return DistancePointToSegment(point, a, b) <= epsilon;
+    }
+
+    private static Vector3 ClampPointToSegment(Vector3 point, Vector3 a, Vector3 b)
+    {
+        const float epsilon = 0.0001f;
+        if (Mathf.Abs(a.x - b.x) <= epsilon)
+        {
+            var minY = Mathf.Min(a.y, b.y);
+            var maxY = Mathf.Max(a.y, b.y);
+            return new Vector3(a.x, Mathf.Clamp(point.y, minY, maxY), 0f);
+        }
+
+        if (Mathf.Abs(a.y - b.y) <= epsilon)
+        {
+            var minX = Mathf.Min(a.x, b.x);
+            var maxX = Mathf.Max(a.x, b.x);
+            return new Vector3(Mathf.Clamp(point.x, minX, maxX), a.y, 0f);
+        }
+
+        return GetClosestPointOnAnySegment(point, a, b);
+    }
+
     public static List<Rect> BuildElementObstacleRects()
     {
         var result = new List<Rect>();
@@ -706,8 +902,11 @@ public class WireConnection : MonoBehaviour
     private void InitializeSignalParams()
     {
         signalSources.Clear();
-        TryAddSignalSource(terminalA, true);
-        TryAddSignalSource(terminalB, false);
+        var sourceIds = new HashSet<int>();
+        var visitedWiresFromA = new HashSet<WireConnection>();
+        var visitedWiresFromB = new HashSet<WireConnection>();
+        CollectSignalSources(terminalA, true, sourceIds, visitedWiresFromA);
+        CollectSignalSources(terminalB, false, sourceIds, visitedWiresFromB);
         if (signalSources.Count == 0)
         {
             hasSignal = false;
@@ -729,9 +928,69 @@ public class WireConnection : MonoBehaviour
         }
     }
 
-    private void TryAddSignalSource(ConnectorTerminal terminal, bool isFromTerminalA)
+    private void CollectSignalSources(
+        ConnectorTerminal rootTerminal,
+        bool isFromTerminalA,
+        HashSet<int> sourceIds,
+        HashSet<WireConnection> visitedWires)
+    {
+        if (rootTerminal == null || sourceIds == null || visitedWires == null)
+        {
+            return;
+        }
+
+        visitedWires.Add(this);
+        var pending = new Queue<ConnectorTerminal>();
+        var visitedTerminals = new HashSet<ConnectorTerminal>();
+        pending.Enqueue(rootTerminal);
+        visitedTerminals.Add(rootTerminal);
+
+        while (pending.Count > 0)
+        {
+            var terminal = pending.Dequeue();
+            TryAddSignalSource(terminal, isFromTerminalA, sourceIds);
+            if (terminal.OwnerElement != null)
+            {
+                continue;
+            }
+
+            if (WiringManager.Instance == null)
+            {
+                continue;
+            }
+
+            var linkedWires = new List<WireConnection>();
+            WiringManager.Instance.GetConnectionsForTerminal(terminal, linkedWires);
+            for (var i = 0; i < linkedWires.Count; i++)
+            {
+                var linked = linkedWires[i];
+                if (linked == null || visitedWires.Contains(linked))
+                {
+                    continue;
+                }
+
+                visitedWires.Add(linked);
+                var nextTerminal = linked.GetOppositeTerminal(terminal);
+                if (nextTerminal == null || visitedTerminals.Contains(nextTerminal))
+                {
+                    continue;
+                }
+
+                visitedTerminals.Add(nextTerminal);
+                pending.Enqueue(nextTerminal);
+            }
+        }
+    }
+
+    private void TryAddSignalSource(ConnectorTerminal terminal, bool isFromTerminalA, HashSet<int> sourceIds)
     {
         if (!CanEmitSignal(terminal, out var waveform) || terminal == null || terminal.OwnerElement == null)
+        {
+            return;
+        }
+
+        var sourceId = terminal.GetInstanceID();
+        if (sourceIds != null && sourceIds.Contains(sourceId))
         {
             return;
         }
@@ -750,6 +1009,11 @@ public class WireConnection : MonoBehaviour
             Wavelength = Mathf.Max(0.1f, radius * 4f),
             IsFromTerminalA = isFromTerminalA
         });
+
+        if (sourceIds != null)
+        {
+            sourceIds.Add(sourceId);
+        }
     }
 
     private ConnectorTerminal GetTerminalForElement(CircuitElement element)
@@ -798,8 +1062,8 @@ public class WireConnection : MonoBehaviour
         {
             var distance = totalLength * i / (sampleCount - 1);
             var sample = SampleAtDistance(distance);
-            var offset = ComputeSignalOffset(distance, time);
-            sample.point += sample.normal * offset;
+            var offset = ComputeSignalOffset(distance * 2f, time);
+            sample.point += sample.normal * (offset * 0.5f);
             sample.point.z = 0f;
             signalPoints.Add(sample.point);
         }
@@ -985,31 +1249,49 @@ public class WireConnection : MonoBehaviour
             return false;
         }
 
-        var connections = new List<WireConnection>();
-        WiringManager.Instance.GetConnectionsForElement(converter, connections);
-        for (var i = 0; i < connections.Count; i++)
+        var inputConnector = inputTerminal.GetComponent<ConnectorTerminal>();
+        if (inputConnector == null)
         {
-            var connection = connections[i];
-            if (connection == null || connection == this)
-            {
-                continue;
-            }
+            return false;
+        }
 
-            var converterTerminal = connection.GetTerminalForElement(converter);
-            if (converterTerminal == null || converterTerminal.transform != inputTerminal)
+        var pending = new Queue<ConnectorTerminal>();
+        var visitedTerminals = new HashSet<ConnectorTerminal>();
+        var visitedWires = new HashSet<WireConnection>();
+        pending.Enqueue(inputConnector);
+        visitedTerminals.Add(inputConnector);
+        while (pending.Count > 0)
+        {
+            var currentTerminal = pending.Dequeue();
+            var linkedWires = new List<WireConnection>();
+            WiringManager.Instance.GetConnectionsForTerminal(currentTerminal, linkedWires);
+            for (var i = 0; i < linkedWires.Count; i++)
             {
-                continue;
-            }
+                var connection = linkedWires[i];
+                if (connection == null || visitedWires.Contains(connection))
+                {
+                    continue;
+                }
 
-            var otherTerminal = connection.GetOppositeTerminal(converterTerminal);
-            if (otherTerminal == null || otherTerminal.OwnerElement == null)
-            {
-                continue;
-            }
+                visitedWires.Add(connection);
+                var otherTerminal = connection.GetOppositeTerminal(currentTerminal);
+                if (otherTerminal == null)
+                {
+                    continue;
+                }
 
-            if (IsPotentialSignalSource(otherTerminal.OwnerElement.ElementType))
-            {
-                return true;
+                if (otherTerminal.OwnerElement != null && IsPotentialSignalSource(otherTerminal.OwnerElement.ElementType))
+                {
+                    return true;
+                }
+
+                if (otherTerminal.OwnerElement != null || visitedTerminals.Contains(otherTerminal))
+                {
+                    continue;
+                }
+
+                visitedTerminals.Add(otherTerminal);
+                pending.Enqueue(otherTerminal);
             }
         }
 
@@ -1021,7 +1303,7 @@ public class WireConnection : MonoBehaviour
         return terminal != null && terminal.name == "Terminal_Output";
     }
 
-    private ConnectorTerminal GetOppositeTerminal(ConnectorTerminal terminal)
+    public ConnectorTerminal GetOppositeTerminal(ConnectorTerminal terminal)
     {
         if (terminal == terminalA)
         {

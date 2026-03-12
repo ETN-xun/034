@@ -106,6 +106,11 @@ public class BackpackItemSpawner : MonoBehaviour
 
     public static bool TrySpawnFromInventory(CircuitElementType type, Vector3 worldPosition)
     {
+        return TrySpawnFromInventory(type, worldPosition, DraggablePlacedComponent.ExternalDragMode.HoldToRelease);
+    }
+
+    public static bool TrySpawnFromInventory(CircuitElementType type, Vector3 worldPosition, DraggablePlacedComponent.ExternalDragMode dragMode)
+    {
         if (!TryConsumeOne(type))
         {
             return false;
@@ -164,7 +169,7 @@ public class BackpackItemSpawner : MonoBehaviour
 
         if (draggable != null)
         {
-            draggable.BeginExternalDragAt(spawnPosition);
+            draggable.BeginExternalDragAt(spawnPosition, dragMode);
         }
 
         return true;

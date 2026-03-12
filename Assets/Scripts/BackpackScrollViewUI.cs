@@ -2,6 +2,9 @@ using UnityEngine;
 
 public class BackpackScrollViewUI : MonoBehaviour
 {
+    [SerializeField]
+    private float dragStartThresholdPixels = 8f;
+
     private Vector2 backpackScrollPosition;
     private GUIStyle backpackItemStyle;
     private Renderer backpackPanelRenderer;
@@ -16,6 +19,11 @@ public class BackpackScrollViewUI : MonoBehaviour
     private Texture2D whiteSquareIconTexture;
     private Texture2D countPipTexture;
     private Texture2D whiteButtonTexture;
+    private bool isBackpackPointerDown;
+    private bool hasSpawnedDuringDrag;
+    private int pointerDownEntryIndex = -1;
+    private CircuitElementType pointerDownType;
+    private Vector2 pointerDownMousePosition;
 
     private void OnGUI()
     {
@@ -42,10 +50,8 @@ public class BackpackScrollViewUI : MonoBehaviour
         {
             var entry = entries[i];
             var rowRect = new Rect(2f, i * rowHeight + 2f, contentRect.width - 4f, rowHeight - 6f);
-            if (GUI.Button(rowRect, GUIContent.none, backpackItemStyle))
-            {
-                BackpackItemSpawner.TrySpawnFromInventory(entry.type, GetFieldSpawnPosition());
-            }
+            GUI.Box(rowRect, GUIContent.none, backpackItemStyle);
+            HandleBackpackRowInput(rowRect, i, entry.type);
 
             var iconSize = Mathf.Min(rowRect.height - 8f, rowRect.width - 12f);
             var iconRect = new Rect(
@@ -117,6 +123,87 @@ public class BackpackScrollViewUI : MonoBehaviour
         var world = Camera.main.ViewportToWorldPoint(spawnViewport);
         world.z = 0f;
         return world;
+    }
+
+    private Vector3 GetMouseWorldPosition()
+    {
+        if (Camera.main == null)
+        {
+            return GetFieldSpawnPosition();
+        }
+
+        var mouse = Input.mousePosition;
+        mouse.z = -Camera.main.transform.position.z;
+        var world = Camera.main.ScreenToWorldPoint(mouse);
+        world.z = 0f;
+        return world;
+    }
+
+    private void HandleBackpackRowInput(Rect rowRect, int rowIndex, CircuitElementType type)
+    {
+        var currentEvent = Event.current;
+        if (currentEvent == null || currentEvent.button != 0)
+        {
+            return;
+        }
+
+        if (currentEvent.type == EventType.MouseDown && rowRect.Contains(currentEvent.mousePosition))
+        {
+            isBackpackPointerDown = true;
+            hasSpawnedDuringDrag = false;
+            pointerDownEntryIndex = rowIndex;
+            pointerDownType = type;
+            pointerDownMousePosition = currentEvent.mousePosition;
+            currentEvent.Use();
+            return;
+        }
+
+        if (!isBackpackPointerDown)
+        {
+            return;
+        }
+
+        if (currentEvent.type == EventType.MouseDrag && !hasSpawnedDuringDrag)
+        {
+            var dragDelta = currentEvent.mousePosition - pointerDownMousePosition;
+            var threshold = Mathf.Max(1f, dragStartThresholdPixels);
+            if (dragDelta.sqrMagnitude >= threshold * threshold)
+            {
+                hasSpawnedDuringDrag = BackpackItemSpawner.TrySpawnFromInventory(
+                    pointerDownType,
+                    GetMouseWorldPosition(),
+                    DraggablePlacedComponent.ExternalDragMode.HoldToRelease);
+                isBackpackPointerDown = false;
+                pointerDownEntryIndex = -1;
+                currentEvent.Use();
+            }
+
+            return;
+        }
+
+        if (currentEvent.type != EventType.MouseUp)
+        {
+            return;
+        }
+
+        if (pointerDownEntryIndex != rowIndex)
+        {
+            return;
+        }
+
+        var isClickRelease = pointerDownEntryIndex == rowIndex && rowRect.Contains(currentEvent.mousePosition) && !hasSpawnedDuringDrag;
+        if (isClickRelease)
+        {
+            BackpackItemSpawner.TrySpawnFromInventory(
+                pointerDownType,
+                GetMouseWorldPosition(),
+                DraggablePlacedComponent.ExternalDragMode.StickyToCursor);
+        }
+
+        isBackpackPointerDown = false;
+        hasSpawnedDuringDrag = false;
+        pointerDownEntryIndex = -1;
+        currentEvent.Use();
     }
 
     private void EnsureBackpackStyles()

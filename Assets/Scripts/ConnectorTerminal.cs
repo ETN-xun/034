@@ -5,6 +5,9 @@ public class ConnectorTerminal : MonoBehaviour
     [field: SerializeField]
     public CircuitElement OwnerElement { get; private set; }
 
+    [field: SerializeField]
+    public bool AlwaysVisible { get; private set; }
+
     public Vector3 Position => transform.position;
     private Renderer cachedRenderer;
 
@@ -24,6 +27,13 @@ public class ConnectorTerminal : MonoBehaviour
         ApplyVisibility();
     }
 
+    public void ConfigureAsJunction()
+    {
+        AlwaysVisible = true;
+        OwnerElement = null;
+        ApplyVisibility();
+    }
+
     private void ApplyVisibility()
     {
         if (cachedRenderer == null)
@@ -31,7 +41,7 @@ public class ConnectorTerminal : MonoBehaviour
             return;
         }
 
-        var visible = WiringManager.Instance != null && WiringManager.Instance.AreTerminalsVisible;
+        var visible = AlwaysVisible || (WiringManager.Instance != null && WiringManager.Instance.AreTerminalsVisible);
         if (cachedRenderer.enabled != visible)
         {
             cachedRenderer.enabled = visible;

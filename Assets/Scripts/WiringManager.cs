@@ -48,10 +48,20 @@ public class WiringManager : MonoBehaviour
     [SerializeField]
     private float terminalPickRadius = 0.3f;
 
+    [SerializeField]
+    private float junctionPointScale = 0.22f;
+
+    [SerializeField]
+    private float junctionConnectDistance = 0.2f;
+
+    [SerializeField]
+    private float junctionZOffset = -0.04f;
+
     private ConnectorTerminal startTerminal;
     private LineRenderer previewLine;
     private readonly List<Vector3> previewWaypoints = new List<Vector3>();
     private readonly List<WireConnection> wireConnections = new List<WireConnection>();
+    private readonly List<WireConnection> sharedConnectionsBuffer = new List<WireConnection>();
     private WireConnection selectedWire;
     private ConnectorTerminal hoveredTerminal;
     private int lastTerminalClickFrame;
@@ -144,6 +154,32 @@ public class WiringManager : MonoBehaviour
         }
     }
 
+    public void GetConnectionsForTerminal(ConnectorTerminal terminal, List<WireConnection> output, WireConnection exclude = null)
+    {
+        if (output == null)
+        {
+            return;
+        }
+
+        output.Clear();
+        if (terminal == null)
+        {
+            return;
+        }
+
+        CleanupDestroyedWires();
+        for (var i = 0; i < wireConnections.Count; i++)
+        {
+            var wire = wireConnections[i];
+            if (wire == null || wire == exclude || !wire.IsConnectedToTerminal(terminal))
+            {
+                continue;
+            }
+
+            output.Add(wire);
+        }
+    }
+
     public void RemoveConnectionsForElement(CircuitElement element)
     {
         if (element == null)
@@ -213,7 +249,10 @@ public class WiringManager : MonoBehaviour
 
         if (startTerminal != null && !handledTerminalClick && Input.GetMouseButtonDown(0) && Time.frameCount != lastTerminalClickFrame)
         {
-            AddBendPoint();
+            if (!TryCompleteWireIntoExistingWire())
+            {
+                AddBendPoint();
+            }
         }
 
         if (startTerminal != null && previewLine != null)
@@ -304,6 +343,125 @@ public class WiringManager : MonoBehaviour
         }
 
         previewWaypoints.Add(bend);
+    }
+
+    private bool TryCompleteWireIntoExistingWire()
+    {
+        if (startTerminal == null)
+        {
+            return false;
+        }
+
+        var targetWire = FindWireAtMouse();
+        if (targetWire == null || targetWire.IsLocked)
+        {
+            return false;
+        }
+
+        if (!targetWire.TryGetJunctionPoint(GetMouseWorldPosition(), Mathf.Max(junctionConnectDistance, wireSelectDistance), GridSpacing, out var junctionPoint))
+        {
+            return false;
+        }
+
+        var junctionTerminal = GetOrCreateJunctionTerminal(junctionPoint);
+        if (junctionTerminal == null || junctionTerminal == startTerminal)
+        {
+            return false;
+        }
+
+        if (!targetWire.IsConnectedToTerminal(junctionTerminal))
+        {
+            if (!SplitWireAtJunction(targetWire, junctionTerminal, junctionPoint))
+            {
+                return false;
+            }
+        }
+
+        CreateWire(startTerminal, junctionTerminal, previewWaypoints);
+        CancelPreview();
+        return true;
+    }
+
+    private bool SplitWireAtJunction(WireConnection wire, ConnectorTerminal junctionTerminal, Vector3 junctionPoint)
+    {
+        if (wire == null || junctionTerminal == null)
+        {
+            return false;
+        }
+
+        if (!wire.TryBuildSplitBendPoints(junctionPoint, out var bendsFromA, out var bendsFromB))
+        {
+            return false;
+        }
+
+        var terminalA = wire.TerminalA;
+        var terminalB = wire.TerminalB;
+        if (terminalA == null || terminalB == null)
+        {
+            return false;
+        }
+
+        wireConnections.Remove(wire);
+        if (selectedWire == wire)
+        {
+            selectedWire = null;
+        }
+
+        Destroy(wire.gameObject);
+        CreateWire(terminalA, junctionTerminal, bendsFromA);
+        CreateWire(junctionTerminal, terminalB, bendsFromB);
+        return true;
+    }
+
+    private ConnectorTerminal GetOrCreateJunctionTerminal(Vector3 point)
+    {
+        var existing = FindJunctionTerminalAt(point);
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        var junction = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        junction.name = "WireJunction";
+        BackpackItemSpawner.AttachToLevelRoot(junction.transform);
+        var spacing = GridSpacing;
+        junction.transform.position = new Vector3(point.x, point.y, junctionZOffset);
+        junction.transform.localScale = Vector3.one * Mathf.Max(0.06f, junctionPointScale * spacing);
+
+        var rendererComponent = junction.GetComponent<Renderer>();
+        if (rendererComponent != null)
+        {
+            rendererComponent.material.color = wireColor;
+            rendererComponent.sortingOrder = 13;
+        }
+
+        var terminal = junction.AddComponent<ConnectorTerminal>();
+        terminal.ConfigureAsJunction();
+        return terminal;
+    }
+
+    private ConnectorTerminal FindJunctionTerminalAt(Vector3 point)
+    {
+        var allTerminals = FindObjectsOfType<ConnectorTerminal>();
+        var threshold = Mathf.Max(0.04f, GridSpacing * 0.1f);
+        var thresholdSqr = threshold * threshold;
+        for (var i = 0; i < allTerminals.Length; i++)
+        {
+            var terminal = allTerminals[i];
+            if (terminal == null || terminal.OwnerElement != null)
+            {
+                continue;
+            }
+
+            var delta = terminal.Position - point;
+            delta.z = 0f;
+            if (delta.sqrMagnitude <= thresholdSqr)
+            {
+                return terminal;
+            }
+        }
+
+        return null;
     }
 
     private void UpdatePreviewLine()
@@ -520,6 +678,30 @@ public class WiringManager : MonoBehaviour
         }
 
         Destroy(wire.gameObject);
+        CleanupDanglingJunctions();
+    }
+
+    private void CleanupDanglingJunctions()
+    {
+        var allTerminals = FindObjectsOfType<ConnectorTerminal>();
+        for (var i = 0; i < allTerminals.Length; i++)
+        {
+            var terminal = allTerminals[i];
+            if (terminal == null || terminal.OwnerElement != null)
+            {
+                continue;
+            }
+
+            GetConnectionsForTerminal(terminal, sharedConnectionsBuffer);
+            if (sharedConnectionsBuffer.Count > 0)
+            {
+                continue;
+            }
+
+            Destroy(terminal.gameObject);
+        }
+
+        sharedConnectionsBuffer.Clear();
     }
 
     private Vector3 GetMouseWorldPosition()
