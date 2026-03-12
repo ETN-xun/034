@@ -18,7 +18,8 @@ public class BackpackScrollViewUI : MonoBehaviour
     private Texture2D redSquareIconTexture;
     private Texture2D whiteSquareIconTexture;
     private Texture2D countPipTexture;
-    private Texture2D whiteButtonTexture;
+    private Texture2D holoSlotTexture;
+    private Texture2D holoBackgroundTexture;
     private bool isBackpackPointerDown;
     private bool hasSpawnedDuringDrag;
     private int pointerDownEntryIndex = -1;
@@ -39,9 +40,10 @@ public class BackpackScrollViewUI : MonoBehaviour
         }
 
         EnsureBackpackStyles();
+        GUI.DrawTexture(panelRectScreen, holoBackgroundTexture, ScaleMode.StretchToFill, true);
         var viewRect = new Rect(panelRectScreen.x + 4f, panelRectScreen.y + 4f, panelRectScreen.width - 8f, panelRectScreen.height - 8f);
         var entries = BackpackItemSpawner.GetInventoryEntries();
-        var rowHeight = 58f;
+        var rowHeight = 130f;
         var contentHeight = Mathf.Max(viewRect.height, entries.Count * rowHeight + 4f);
         var contentRect = new Rect(0f, 0f, Mathf.Max(1f, viewRect.width), contentHeight);
         backpackScrollPosition = GUI.BeginScrollView(viewRect, backpackScrollPosition, contentRect, false, false);
@@ -221,11 +223,15 @@ public class BackpackScrollViewUI : MonoBehaviour
         backpackItemStyle.normal.textColor = new Color(0f, 0f, 0f, 0f);
         backpackItemStyle.hover.textColor = new Color(0f, 0f, 0f, 0f);
         backpackItemStyle.active.textColor = new Color(0f, 0f, 0f, 0f);
-        whiteButtonTexture = CreateSolidTexture(new Color(1f, 1f, 1f, 1f));
-        backpackItemStyle.normal.background = whiteButtonTexture;
-        backpackItemStyle.hover.background = whiteButtonTexture;
-        backpackItemStyle.active.background = whiteButtonTexture;
-        backpackItemStyle.focused.background = whiteButtonTexture;
+        // 全息蓝半透明卡槽
+        holoSlotTexture = CreateSolidTexture(new Color(0.15f, 0.45f, 1f, 0f));
+        var holoSlotHover = CreateSolidTexture(new Color(0.25f, 0.6f, 1f, 0f));  // 完全透明， 不需要卡槽
+        backpackItemStyle.normal.background = holoSlotTexture;
+        backpackItemStyle.hover.background = holoSlotHover;
+        backpackItemStyle.active.background = holoSlotHover;
+        backpackItemStyle.focused.background = holoSlotTexture;
+        // 全息蓝半透明背景
+        holoBackgroundTexture = CreateSolidTexture(new Color(0.1f, 0.35f, 0.9f, 0.30f));
     }
 
     private Texture2D GetInventoryIconTexture(CircuitElementType type)
@@ -332,21 +338,22 @@ public class BackpackScrollViewUI : MonoBehaviour
 
         var radius = (size - 1) * 0.5f;
         var center = new Vector2(radius, radius);
-        var edge = Mathf.Max(1f, size * 0.06f);
-        var outline = new Color(0f, 0f, 0f, 0.75f);
+        var aaWidth = Mathf.Max(1.0f, size * 0.04f);
         for (var y = 0; y < size; y++)
         {
             for (var x = 0; x < size; x++)
             {
                 var delta = new Vector2(x, y) - center;
                 var distance = delta.magnitude;
-                if (distance > radius)
+                if (distance > radius + 0.5f)
                 {
                     texture.SetPixel(x, y, Color.clear);
                     continue;
                 }
 
-                var color = distance >= radius - edge ? outline : fillColor;
+                var alpha = Mathf.SmoothStep(1f, 0f, (distance - (radius - aaWidth)) / aaWidth);
+                var color = fillColor;
+                color.a = fillColor.a * Mathf.Clamp01(alpha);
                 texture.SetPixel(x, y, color);
             }
         }
@@ -361,7 +368,7 @@ public class BackpackScrollViewUI : MonoBehaviour
         texture.wrapMode = TextureWrapMode.Clamp;
         texture.filterMode = FilterMode.Bilinear;
         var margin = Mathf.Max(2, Mathf.RoundToInt(size * 0.12f));
-        var outline = new Color(0f, 0f, 0f, 0.75f);
+        var aaWidth = Mathf.Max(1.0f, size * 0.04f);
         for (var y = 0; y < size; y++)
         {
             for (var x = 0; x < size; x++)
@@ -373,8 +380,13 @@ public class BackpackScrollViewUI : MonoBehaviour
                     continue;
                 }
 
-                var border = x <= margin + 1 || x >= size - margin - 2 || y <= margin + 1 || y >= size - margin - 2;
-                texture.SetPixel(x, y, border ? outline : fillColor);
+                var edgeDist = Mathf.Min(
+                    Mathf.Min(x - margin, size - margin - 1 - x),
+                    Mathf.Min(y - margin, size - margin - 1 - y));
+                var alpha = Mathf.SmoothStep(0f, 1f, edgeDist / aaWidth);
+                var color = fillColor;
+                color.a = fillColor.a * Mathf.Clamp01(alpha);
+                texture.SetPixel(x, y, color);
             }
         }
 
@@ -390,7 +402,7 @@ public class BackpackScrollViewUI : MonoBehaviour
         var p0 = new Vector2(size * 0.5f, size * 0.88f);
         var p1 = new Vector2(size * 0.12f, size * 0.18f);
         var p2 = new Vector2(size * 0.88f, size * 0.18f);
-        var outline = new Color(0f, 0f, 0f, 0.75f);
+        var aaWidth = Mathf.Max(1.0f, size * 0.04f);
         for (var y = 0; y < size; y++)
         {
             for (var x = 0; x < size; x++)
@@ -405,7 +417,10 @@ public class BackpackScrollViewUI : MonoBehaviour
                 var edgeDistance = Mathf.Min(
                     DistancePointToLine(point, p0, p1),
                     Mathf.Min(DistancePointToLine(point, p1, p2), DistancePointToLine(point, p2, p0)));
-                texture.SetPixel(x, y, edgeDistance <= 1.6f ? outline : fillColor);
+                var alpha = Mathf.SmoothStep(0f, 1f, edgeDistance / aaWidth);
+                var color = fillColor;
+                color.a = fillColor.a * Mathf.Clamp01(alpha);
+                texture.SetPixel(x, y, color);
             }
         }
 

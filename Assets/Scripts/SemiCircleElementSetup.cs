@@ -20,7 +20,7 @@ public class SemiCircleElementSetup : MonoBehaviour
     private float bodyDepth = 0.2f;
 
     [SerializeField]
-    private float terminalScale = 0.22f;
+    private float terminalScale = 0.1f;
 
     [SerializeField]
     private float gridSpacing = 1f;
