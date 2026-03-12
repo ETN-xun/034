@@ -2,6 +2,12 @@ using UnityEngine;
 
 public class DraggablePlacedComponent : MonoBehaviour
 {
+    public enum ExternalDragMode
+    {
+        HoldToRelease,
+        StickyToCursor
+    }
+
     [SerializeField]
     private Camera targetCamera;
 
@@ -21,6 +27,8 @@ public class DraggablePlacedComponent : MonoBehaviour
     private bool isPointerDown;
     private Vector3 dragOffset;
     private Vector3 pointerDownScreenPosition;
+    private ExternalDragMode currentDragMode = ExternalDragMode.HoldToRelease;
+    private int dragStartedFrame;
 
     private void Awake()
     {
@@ -45,12 +53,28 @@ public class DraggablePlacedComponent : MonoBehaviour
 
     private void Update()
     {
-        if (!isDragging || Input.GetMouseButton(0))
+        if (!isDragging)
         {
             return;
         }
 
-        CompleteDragPlacement();
+        var world = GetMouseWorldPosition() + dragOffset;
+        transform.position = SnapToGrid(world);
+
+        if (currentDragMode == ExternalDragMode.StickyToCursor)
+        {
+            if (Time.frameCount > dragStartedFrame && Input.GetMouseButtonDown(0))
+            {
+                CompleteDragPlacement();
+            }
+
+            return;
+        }
+
+        if (!Input.GetMouseButton(0))
+        {
+            CompleteDragPlacement();
+        }
     }
 
     private void OnMouseDrag()
@@ -69,11 +93,8 @@ public class DraggablePlacedComponent : MonoBehaviour
                 return;
             }
 
-            BeginDrag();
+            BeginDrag(ExternalDragMode.HoldToRelease);
         }
-
-        var world = GetMouseWorldPosition() + dragOffset;
-        transform.position = SnapToGrid(world);
     }
 
     private void OnMouseUp()
@@ -111,7 +132,7 @@ public class DraggablePlacedComponent : MonoBehaviour
         EndDrag();
     }
 
-    public void BeginExternalDragAt(Vector3 worldPosition)
+    public void BeginExternalDragAt(Vector3 worldPosition, ExternalDragMode dragMode)
     {
         if (IsLocked())
         {
@@ -121,17 +142,19 @@ public class DraggablePlacedComponent : MonoBehaviour
         transform.position = SnapToGrid(worldPosition);
         isPointerDown = true;
         pointerDownScreenPosition = Input.mousePosition;
-        BeginDrag();
+        BeginDrag(dragMode);
         dragOffset = Vector3.zero;
     }
 
-    private void BeginDrag()
+    private void BeginDrag(ExternalDragMode dragMode)
     {
         if (isDragging)
         {
             return;
         }
 
+        currentDragMode = dragMode;
+        dragStartedFrame = Time.frameCount;
         isDragging = true;
         dragOffset = transform.position - GetMouseWorldPosition();
         if (WiringManager.Instance != null)
@@ -148,6 +171,7 @@ public class DraggablePlacedComponent : MonoBehaviour
         }
 
         isDragging = false;
+        currentDragMode = ExternalDragMode.HoldToRelease;
         if (WiringManager.Instance != null)
         {
             WiringManager.Instance.NotifyElementDragEnded();
