@@ -4,42 +4,64 @@ using UnityEngine.UI;
 
 public class UI : MonoBehaviour
 {
+    public static UI Instance { get; private set; }
+    public static bool IsBackpackOpen => Instance == null || Instance.isShowing;
+    public static bool ShouldRenderBackpackUI => Instance == null || Instance.backpackOpenProgress > 0.001f;
+    public static float BackpackOpenProgress => Instance == null ? 1f : Instance.backpackOpenProgress;
 
     [SerializeField] private Button backPackBtn;
-    [SerializeField] private GameObject backPackPanel;
+    [SerializeField] private bool isShowing = true;
+    [SerializeField] private float toggleDuration = 0.5f;
+    [SerializeField] private Ease openEase = Ease.OutBack;
+    [SerializeField] private Ease closeEase = Ease.InBack;
 
-    void Start()
+    private Tween backpackToggleTween;
+    private float backpackOpenProgress = 1f;
+
+    private void Awake()
     {
-        backPackBtn.onClick.AddListener(backPackAnimationPlay);
+        Instance = this;
+        backpackOpenProgress = isShowing ? 1f : 0f;
     }
 
-
-    private Tween backPackAnimationTween;
-    private bool isShowing = true;
-    public float scaleY = 10f;
-
-    private void backPackAnimationPlay()
+    private void Start()
     {
-        if (backPackAnimationTween.IsActive())
+        if (backPackBtn != null)
         {
-            backPackAnimationTween.Kill();
+            backPackBtn.onClick.AddListener(ToggleBackpackUI);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (backpackToggleTween != null && backpackToggleTween.IsActive())
+        {
+            backpackToggleTween.Kill();
         }
 
-        if (isShowing)
+        if (backPackBtn != null)
         {
-            backPackAnimationTween = backPackPanel.transform.DOScaleY(0f, 0.5f).SetEase(Ease.InBack);
+            backPackBtn.onClick.RemoveListener(ToggleBackpackUI);
         }
-        else
+
+        if (Instance == this)
         {
-            backPackAnimationTween = backPackPanel.transform.DOScaleY(scaleY, 0.5f).SetEase(Ease.OutBack);
+            Instance = null;
         }
+    }
+
+    private void ToggleBackpackUI()
+    {
+        if (backpackToggleTween != null && backpackToggleTween.IsActive())
+        {
+            backpackToggleTween.Kill();
+        }
+
         isShowing = !isShowing;
+        var targetProgress = isShowing ? 1f : 0f;
+        var easing = isShowing ? openEase : closeEase;
+        backpackToggleTween = DOTween
+            .To(() => backpackOpenProgress, value => backpackOpenProgress = value, targetProgress, toggleDuration)
+            .SetEase(easing);
     }
-
-
-
-
-
-
-
 }
