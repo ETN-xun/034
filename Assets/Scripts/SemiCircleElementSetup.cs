@@ -22,7 +22,6 @@ public class SemiCircleElementSetup : MonoBehaviour
     [SerializeField]
     private float bodyDepth = 0.2f;
 
-    [SerializeField]
     private float terminalScale = DefaultTerminalScaleInGridUnits;
 
     [SerializeField]
