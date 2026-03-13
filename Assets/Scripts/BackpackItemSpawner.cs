@@ -3,9 +3,45 @@ using System.Collections.Generic;
 
 public class BackpackItemSpawner : MonoBehaviour
 {
+    public struct InventoryEntry
+    {
+        public CircuitElementType Type;
+        public int Length;
+        public int Width;
+        public int Count;
+    }
+
+    private struct InventoryKey : System.IEquatable<InventoryKey>
+    {
+        public CircuitElementType Type;
+        public int Length;
+        public int Width;
+
+        public bool Equals(InventoryKey other)
+        {
+            return Type == other.Type && Length == other.Length && Width == other.Width;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is InventoryKey other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                var hash = (int)Type;
+                hash = (hash * 397) ^ Length;
+                hash = (hash * 397) ^ Width;
+                return hash;
+            }
+        }
+    }
+
     private const string LevelRootName = "LevelRoot";
     private const string InventoryStateObjectName = "BackpackInventoryState";
-    private static readonly Dictionary<CircuitElementType, int> RuntimeInventory = new Dictionary<CircuitElementType, int>();
+    private static readonly Dictionary<InventoryKey, int> RuntimeInventory = new Dictionary<InventoryKey, int>();
     private static readonly Dictionary<CircuitElementType, string> RuntimePrefabPaths = new Dictionary<CircuitElementType, string>();
     private static Transform cachedLevelRoot;
     private static BackpackInventoryState cachedInventoryState;
@@ -45,7 +81,7 @@ public class BackpackItemSpawner : MonoBehaviour
 
         if (currentCount > 0)
         {
-            AddInventoryToType(elementType, currentCount);
+            AddInventoryToType(elementType, currentCount, CircuitElement.DefaultLength, CircuitElement.DefaultWidth);
             currentCount = 0;
         }
 
@@ -59,14 +95,27 @@ public class BackpackItemSpawner : MonoBehaviour
 
     public static int AddInventoryToType(CircuitElementType type, int amount)
     {
+        return AddInventoryToType(type, amount, CircuitElement.DefaultLength, CircuitElement.DefaultWidth);
+    }
+
+    public static int AddInventoryToType(CircuitElementType type, int amount, int length, int width)
+    {
         if (amount <= 0)
         {
             return 0;
         }
 
+        var normalizedLength = NormalizeDimension(length);
+        var normalizedWidth = NormalizeDimension(width);
+        var key = new InventoryKey
+        {
+            Type = type,
+            Length = normalizedLength,
+            Width = normalizedWidth
+        };
         EnsureInventoryStateExists();
-        RuntimeInventory.TryGetValue(type, out var current);
-        RuntimeInventory[type] = Mathf.Max(0, current + amount);
+        RuntimeInventory.TryGetValue(key, out var current);
+        RuntimeInventory[key] = Mathf.Max(0, current + amount);
         PersistRuntimeInventory();
         InventoryChanged?.Invoke();
         return 1;
@@ -82,36 +131,34 @@ public class BackpackItemSpawner : MonoBehaviour
 
     public static bool TryConsumeOne(CircuitElementType type)
     {
-        EnsureInventoryStateExists();
-        RuntimeInventory.TryGetValue(type, out var current);
-        if (current <= 0)
-        {
-            return false;
-        }
-
-        var next = Mathf.Max(0, current - 1);
-        if (next == 0)
-        {
-            RuntimeInventory.Remove(type);
-        }
-        else
-        {
-            RuntimeInventory[type] = next;
-        }
-
-        PersistRuntimeInventory();
-        InventoryChanged?.Invoke();
-        return true;
+        return TryConsumeOne(type, CircuitElement.DefaultLength, CircuitElement.DefaultWidth);
     }
 
     public static bool TrySpawnFromInventory(CircuitElementType type, Vector3 worldPosition)
     {
-        return TrySpawnFromInventory(type, worldPosition, DraggablePlacedComponent.ExternalDragMode.HoldToRelease);
+        return TrySpawnFromInventory(
+            type,
+            CircuitElement.DefaultLength,
+            CircuitElement.DefaultWidth,
+            worldPosition,
+            DraggablePlacedComponent.ExternalDragMode.HoldToRelease);
     }
 
     public static bool TrySpawnFromInventory(CircuitElementType type, Vector3 worldPosition, DraggablePlacedComponent.ExternalDragMode dragMode)
     {
-        if (!TryConsumeOne(type))
+        return TrySpawnFromInventory(
+            type,
+            CircuitElement.DefaultLength,
+            CircuitElement.DefaultWidth,
+            worldPosition,
+            dragMode);
+    }
+
+    public static bool TrySpawnFromInventory(CircuitElementType type, int length, int width, Vector3 worldPosition, DraggablePlacedComponent.ExternalDragMode dragMode)
+    {
+        var normalizedLength = NormalizeDimension(length);
+        var normalizedWidth = NormalizeDimension(width);
+        if (!TryConsumeOne(type, normalizedLength, normalizedWidth))
         {
             return false;
         }
@@ -119,14 +166,14 @@ public class BackpackItemSpawner : MonoBehaviour
         var prefabPath = GetPrefabPath(type);
         if (string.IsNullOrEmpty(prefabPath))
         {
-            AddInventoryToType(type, 1);
+            AddInventoryToType(type, 1, normalizedLength, normalizedWidth);
             return false;
         }
 
         var placeablePrefab = Resources.Load<GameObject>(prefabPath);
         if (placeablePrefab == null)
         {
-            AddInventoryToType(type, 1);
+            AddInventoryToType(type, 1, normalizedLength, normalizedWidth);
             return false;
         }
 
@@ -148,6 +195,7 @@ public class BackpackItemSpawner : MonoBehaviour
         if (circuitElement != null)
         {
             circuitElement.SetType(type);
+            circuitElement.SetSize(normalizedLength, normalizedWidth);
         }
 
         var elementSetup = instance.GetComponent<SemiCircleElementSetup>();
@@ -175,10 +223,10 @@ public class BackpackItemSpawner : MonoBehaviour
         return true;
     }
 
-    public static List<(CircuitElementType type, int count)> GetInventoryEntries()
+    public static List<InventoryEntry> GetInventoryEntries()
     {
         EnsureInventoryStateExists();
-        var result = new List<(CircuitElementType type, int count)>();
+        var result = new List<InventoryEntry>();
         foreach (var pair in RuntimeInventory)
         {
             if (pair.Value <= 0)
@@ -186,18 +234,49 @@ public class BackpackItemSpawner : MonoBehaviour
                 continue;
             }
 
-            result.Add((pair.Key, pair.Value));
+            result.Add(new InventoryEntry
+            {
+                Type = pair.Key.Type,
+                Length = pair.Key.Length,
+                Width = pair.Key.Width,
+                Count = pair.Value
+            });
         }
 
-        result.Sort((a, b) => ((int)a.type).CompareTo((int)b.type));
+        result.Sort((a, b) =>
+        {
+            var typeCompare = ((int)a.Type).CompareTo((int)b.Type);
+            if (typeCompare != 0)
+            {
+                return typeCompare;
+            }
+
+            var lengthCompare = a.Length.CompareTo(b.Length);
+            if (lengthCompare != 0)
+            {
+                return lengthCompare;
+            }
+
+            return a.Width.CompareTo(b.Width);
+        });
         return result;
     }
 
     public static int GetInventoryCount(CircuitElementType type)
     {
         EnsureInventoryStateExists();
-        RuntimeInventory.TryGetValue(type, out var current);
-        return Mathf.Max(0, current);
+        var total = 0;
+        foreach (var pair in RuntimeInventory)
+        {
+            if (pair.Key.Type != type)
+            {
+                continue;
+            }
+
+            total += Mathf.Max(0, pair.Value);
+        }
+
+        return total;
     }
 
     public static Transform GetOrCreateLevelRoot()
@@ -273,7 +352,13 @@ public class BackpackItemSpawner : MonoBehaviour
                     continue;
                 }
 
-                RuntimeInventory[record.type] = Mathf.Max(0, record.count);
+                var key = new InventoryKey
+                {
+                    Type = record.type,
+                    Length = NormalizeDimension(record.length),
+                    Width = NormalizeDimension(record.width)
+                };
+                RuntimeInventory[key] = Mathf.Max(0, record.count);
                 RegisterPrefabPath(record.type, record.prefabResourcePath);
             }
         }
@@ -293,13 +378,30 @@ public class BackpackItemSpawner : MonoBehaviour
 
             list.Add(new BackpackInventoryState.InventoryRecord
             {
-                type = pair.Key,
+                type = pair.Key.Type,
                 count = pair.Value,
-                prefabResourcePath = GetPrefabPath(pair.Key)
+                prefabResourcePath = GetPrefabPath(pair.Key.Type),
+                length = pair.Key.Length,
+                width = pair.Key.Width
             });
         }
 
-        list.Sort((a, b) => ((int)a.type).CompareTo((int)b.type));
+        list.Sort((a, b) =>
+        {
+            var typeCompare = ((int)a.type).CompareTo((int)b.type);
+            if (typeCompare != 0)
+            {
+                return typeCompare;
+            }
+
+            var lengthCompare = a.length.CompareTo(b.length);
+            if (lengthCompare != 0)
+            {
+                return lengthCompare;
+            }
+
+            return a.width.CompareTo(b.width);
+        });
         return list;
     }
 
@@ -427,5 +529,40 @@ public class BackpackItemSpawner : MonoBehaviour
             default:
                 return "Prefabs/SemiCircleGenerator";
         }
+    }
+
+    private static bool TryConsumeOne(CircuitElementType type, int length, int width)
+    {
+        EnsureInventoryStateExists();
+        var key = new InventoryKey
+        {
+            Type = type,
+            Length = NormalizeDimension(length),
+            Width = NormalizeDimension(width)
+        };
+        RuntimeInventory.TryGetValue(key, out var current);
+        if (current <= 0)
+        {
+            return false;
+        }
+
+        var next = Mathf.Max(0, current - 1);
+        if (next == 0)
+        {
+            RuntimeInventory.Remove(key);
+        }
+        else
+        {
+            RuntimeInventory[key] = next;
+        }
+
+        PersistRuntimeInventory();
+        InventoryChanged?.Invoke();
+        return true;
+    }
+
+    private static int NormalizeDimension(int value)
+    {
+        return Mathf.Max(1, value);
     }
 }

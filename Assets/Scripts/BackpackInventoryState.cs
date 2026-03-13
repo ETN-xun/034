@@ -9,6 +9,8 @@ public class BackpackInventoryState : MonoBehaviour
         public CircuitElementType type;
         public int count;
         public string prefabResourcePath;
+        public int length = CircuitElement.DefaultLength;
+        public int width = CircuitElement.DefaultWidth;
     }
 
     [SerializeField]

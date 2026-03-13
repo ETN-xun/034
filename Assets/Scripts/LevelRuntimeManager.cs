@@ -77,10 +77,17 @@ public class LevelRuntimeManager : MonoBehaviour
 
     public int AddItemsToBackpack(CircuitElementType type, int amount)
     {
+        return AddItemsToBackpack(type, amount, CircuitElement.DefaultLength, CircuitElement.DefaultWidth);
+    }
+
+    public int AddItemsToBackpack(CircuitElementType type, int amount, int length, int width)
+    {
         var safeAmount = Mathf.Max(0, amount);
-        var changed = BackpackItemSpawner.AddInventoryToType(type, safeAmount);
-        SetStatus($"已添加：{type} x {safeAmount}，影响槽位：{changed}");
-        Debug.Log($"GM Add Backpack Items: type={type}, amount={safeAmount}, affectedSpawners={changed}");
+        var safeLength = Mathf.Max(1, length);
+        var safeWidth = Mathf.Max(1, width);
+        var changed = BackpackItemSpawner.AddInventoryToType(type, safeAmount, safeLength, safeWidth);
+        SetStatus($"已添加：{type} {safeLength}x{safeWidth} x {safeAmount}，影响槽位：{changed}");
+        Debug.Log($"GM Add Backpack Items: type={type}, length={safeLength}, width={safeWidth}, amount={safeAmount}, affectedSpawners={changed}");
         return changed;
     }
 
@@ -245,6 +252,8 @@ public class LevelRuntimeManager : MonoBehaviour
             return false;
         }
 
+        BuildExpectedSignalParams(receiver, out var expectedAmplitude, out var expectedWavelength);
+
         WiringManager.Instance.GetConnectionsForElement(receiver, receiverWires);
         if (receiverWires.Count == 0)
         {
@@ -264,18 +273,45 @@ public class LevelRuntimeManager : MonoBehaviour
                 continue;
             }
 
-            if (!wire.TryGetSignalShapeParams(out _, out _, out _))
+            if (!wire.TryGetSignalShapeParams(out var amplitude, out var wavelength, out _))
             {
                 continue;
             }
 
-            if (IsSignalTypeMatchReceiver(receiver.ElementType, signalType))
+            if (IsSignalTypeMatchReceiver(receiver.ElementType, signalType)
+                && IsSignalSizeMatch(expectedAmplitude, expectedWavelength, amplitude, wavelength))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private static void BuildExpectedSignalParams(CircuitElement receiver, out float amplitude, out float wavelength)
+    {
+        amplitude = 0.5f;
+        wavelength = 2f;
+        if (receiver == null)
+        {
+            return;
+        }
+
+        var rendererComponent = receiver.GetComponent<Renderer>();
+        if (rendererComponent == null)
+        {
+            return;
+        }
+
+        var extents = rendererComponent.bounds.extents;
+        amplitude = Mathf.Max(0.05f, extents.y);
+        wavelength = Mathf.Max(0.1f, extents.x * 4f);
+    }
+
+    private static bool IsSignalSizeMatch(float expectedAmplitude, float expectedWavelength, float actualAmplitude, float actualWavelength)
+    {
+        return Mathf.Abs(expectedAmplitude - actualAmplitude) <= 0.01f
+            && Mathf.Abs(expectedWavelength - actualWavelength) <= 0.01f;
     }
 
     private bool IsReceiverType(CircuitElementType type)

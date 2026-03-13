@@ -996,17 +996,20 @@ public class WireConnection : MonoBehaviour
         }
 
         var rendererComponent = terminal.OwnerElement.GetComponent<Renderer>();
-        var radius = 0.5f;
+        var amplitude = 0.5f;
+        var wavelength = 2f;
         if (rendererComponent != null)
         {
-            radius = Mathf.Max(0.05f, rendererComponent.bounds.extents.x);
+            var extents = rendererComponent.bounds.extents;
+            amplitude = Mathf.Max(0.05f, extents.y);
+            wavelength = Mathf.Max(0.1f, extents.x * 4f);
         }
 
         signalSources.Add(new SignalSourceInfo
         {
             Waveform = waveform,
-            Amplitude = radius,
-            Wavelength = Mathf.Max(0.1f, radius * 4f),
+            Amplitude = amplitude,
+            Wavelength = wavelength,
             IsFromTerminalA = isFromTerminalA
         });
 

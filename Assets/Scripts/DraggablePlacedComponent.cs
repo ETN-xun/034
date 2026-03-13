@@ -231,7 +231,7 @@ public class DraggablePlacedComponent : MonoBehaviour
             WiringManager.Instance.RemoveConnectionsForElement(element);
         }
 
-        BackpackItemSpawner.AddInventoryToType(element.ElementType, 1);
+        BackpackItemSpawner.AddInventoryToType(element.ElementType, 1, element.Length, element.Width);
         Destroy(gameObject);
     }
 

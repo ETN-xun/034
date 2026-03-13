@@ -12,6 +12,12 @@ public class RuntimeGmPanel : MonoBehaviour
     private int addAmount = 1;
 
     [SerializeField]
+    private int addLength = CircuitElement.DefaultLength;
+
+    [SerializeField]
+    private int addWidth = CircuitElement.DefaultWidth;
+
+    [SerializeField]
     private string levelPrefabName = "Level1";
 
     [SerializeField]
@@ -30,6 +36,8 @@ public class RuntimeGmPanel : MonoBehaviour
     private bool showTypeDropdown;
 
     private string addAmountText = "1";
+    private string addLengthText = "2";
+    private string addWidthText = "2";
     private bool resizingPanel;
     private Vector2 resizeStartMouse;
     private Vector2 resizeStartSize;
@@ -44,6 +52,9 @@ public class RuntimeGmPanel : MonoBehaviour
         }
 
         Instance = this;
+        addAmountText = addAmount.ToString();
+        addLengthText = Mathf.Max(1, addLength).ToString();
+        addWidthText = Mathf.Max(1, addWidth).ToString();
     }
 
     private void OnDestroy()
@@ -67,7 +78,9 @@ public class RuntimeGmPanel : MonoBehaviour
     [ContextMenu("GM/向背包添加配置数量元器件")]
     public void AddConfiguredItemsToBackpack()
     {
-        EnsureRuntimeManager().AddItemsToBackpack(addType, addAmount);
+        addLength = Mathf.Max(1, addLength);
+        addWidth = Mathf.Max(1, addWidth);
+        EnsureRuntimeManager().AddItemsToBackpack(addType, addAmount, addLength, addWidth);
     }
 
     [ContextMenu("GM/保存当前关卡为预制体")]
@@ -129,16 +142,30 @@ public class RuntimeGmPanel : MonoBehaviour
         GUILayout.BeginHorizontal();
         GUILayout.Label("数量", GUILayout.Width(40f));
         addAmountText = GUILayout.TextField(addAmountText, GUILayout.Width(120f));
+        GUILayout.EndHorizontal();
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("长", GUILayout.Width(40f));
+        addLengthText = GUILayout.TextField(addLengthText, GUILayout.Width(120f));
+        GUILayout.Label("宽", GUILayout.Width(40f));
+        addWidthText = GUILayout.TextField(addWidthText, GUILayout.Width(120f));
+        GUILayout.EndHorizontal();
+
+        GUILayout.BeginHorizontal();
         if (GUILayout.Button("添加到背包", GUILayout.Height(28f)))
         {
-            if (int.TryParse(addAmountText, out var amount))
+            if (int.TryParse(addAmountText, out var amount)
+                && int.TryParse(addLengthText, out var length)
+                && int.TryParse(addWidthText, out var width))
             {
                 addAmount = Mathf.Max(0, amount);
+                addLength = Mathf.Max(1, length);
+                addWidth = Mathf.Max(1, width);
                 AddConfiguredItemsToBackpack();
             }
             else
             {
-                EnsureRuntimeManager().SetStatus("数量格式错误");
+                EnsureRuntimeManager().SetStatus("数量/长/宽格式错误");
             }
         }
 

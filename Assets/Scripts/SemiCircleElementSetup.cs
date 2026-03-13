@@ -83,7 +83,12 @@ public class SemiCircleElementSetup : MonoBehaviour
         var spacing = Mathf.Max(0.01f, gridSpacing);
         var radius = Mathf.Max(0.05f, bodyRadiusInGridUnits * spacing);
         var diameter = radius * 2f;
-        transform.localScale = new Vector3(diameter, diameter, Mathf.Max(0.01f, bodyDepth));
+        var lengthScale = circuitElement != null ? circuitElement.LengthScaleMultiplier : 1f;
+        var widthScale = circuitElement != null ? circuitElement.WidthScaleMultiplier : 1f;
+        transform.localScale = new Vector3(
+            Mathf.Max(0.05f, diameter * lengthScale),
+            Mathf.Max(0.05f, diameter * widthScale),
+            Mathf.Max(0.01f, bodyDepth));
         transform.position = SnapToGrid(transform.position);
         EnsureBodyShape();
         ApplyBodyColor();
@@ -237,9 +242,9 @@ public class SemiCircleElementSetup : MonoBehaviour
         var shape = GetShapeCategory(circuitElement.ElementType);
         if (shape == ShapeCategory.Circle)
         {
-            var sphereCollider = gameObject.AddComponent<SphereCollider>();
-            sphereCollider.center = Vector3.zero;
-            sphereCollider.radius = 0.5f;
+            var circleCollider = gameObject.AddComponent<MeshCollider>();
+            circleCollider.convex = false;
+            circleCollider.sharedMesh = GetCircleMesh();
             return;
         }
 
@@ -260,16 +265,26 @@ public class SemiCircleElementSetup : MonoBehaviour
 
     private Vector3 GetTerminalWorldOffset(int index)
     {
-        var spacing = Mathf.Max(0.01f, gridSpacing);
+        var halfExtents = GetHalfExtentsInWorld();
         if (IsConverterType(circuitElement.ElementType))
         {
             var converterIndex = Mathf.Clamp(index, 0, ConverterTerminalOffsets.Length - 1);
-            return ConverterTerminalOffsets[converterIndex] * spacing;
+            var x = converterIndex == 0 ? -halfExtents.x : halfExtents.x;
+            return new Vector3(x, 0f, 0f);
         }
 
-        var radius = Mathf.Max(0.05f, bodyRadiusInGridUnits * spacing);
-        var direction = FourWayTerminalDirections[Mathf.Clamp(index, 0, FourWayTerminalDirections.Length - 1)];
-        return direction * radius;
+        var directionIndex = Mathf.Clamp(index, 0, FourWayTerminalDirections.Length - 1);
+        switch (directionIndex)
+        {
+            case 0:
+                return new Vector3(halfExtents.x, 0f, 0f);
+            case 1:
+                return new Vector3(0f, halfExtents.y, 0f);
+            case 2:
+                return new Vector3(-halfExtents.x, 0f, 0f);
+            default:
+                return new Vector3(0f, -halfExtents.y, 0f);
+        }
     }
 
     private Vector3 WorldOffsetToLocal(Vector3 worldOffset)
@@ -280,6 +295,15 @@ public class SemiCircleElementSetup : MonoBehaviour
             Mathf.Max(0.0001f, transform.localScale.z));
         var localZ = terminalWorldZOffset / safeScale.z;
         return new Vector3(worldOffset.x / safeScale.x, worldOffset.y / safeScale.y, localZ);
+    }
+
+    private Vector2 GetHalfExtentsInWorld()
+    {
+        var spacing = Mathf.Max(0.01f, gridSpacing);
+        var baseExtent = Mathf.Max(0.05f, bodyRadiusInGridUnits * spacing);
+        var lengthScale = circuitElement != null ? circuitElement.LengthScaleMultiplier : 1f;
+        var widthScale = circuitElement != null ? circuitElement.WidthScaleMultiplier : 1f;
+        return new Vector2(baseExtent * lengthScale, baseExtent * widthScale);
     }
 
     private static string[] BuildFourWayTerminalNames()
