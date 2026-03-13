@@ -48,8 +48,7 @@ public class WiringManager : MonoBehaviour
     [SerializeField]
     private float terminalPickRadius = 0.3f;
 
-    [SerializeField]
-    private float junctionPointScale = 0.22f;
+    private float junctionPointScale = 0.1f;
 
     [SerializeField]
     private float junctionConnectDistance = 0.2f;

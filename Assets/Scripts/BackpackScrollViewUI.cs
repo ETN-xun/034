@@ -9,6 +9,8 @@ public class BackpackScrollViewUI : MonoBehaviour
     private float dragStartThresholdPixels = 8f;
 
     [SerializeField]
+    private Vector2 backpackScrollPosition;
+    private GUIStyle backpackItemStyle;
     private float backpackScreenWidthRatio = 0.22f;
 
     private Texture2D blueCircleIconTexture;
