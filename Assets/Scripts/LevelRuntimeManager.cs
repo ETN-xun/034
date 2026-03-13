@@ -292,20 +292,6 @@ public class LevelRuntimeManager : MonoBehaviour
     {
         amplitude = 0.5f;
         wavelength = 2f;
-        if (receiver == null)
-        {
-            return;
-        }
-
-        var rendererComponent = receiver.GetComponent<Renderer>();
-        if (rendererComponent == null)
-        {
-            return;
-        }
-
-        var extents = rendererComponent.bounds.extents;
-        amplitude = Mathf.Max(0.05f, extents.y);
-        wavelength = Mathf.Max(0.1f, extents.x * 4f);
     }
 
     private static bool IsSignalSizeMatch(float expectedAmplitude, float expectedWavelength, float actualAmplitude, float actualWavelength)

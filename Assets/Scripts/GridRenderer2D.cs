@@ -148,7 +148,20 @@ public class GridRenderer2D : MonoBehaviour
         var endY = Mathf.Ceil((maxY + epsilon) / spacingValue) * spacingValue;
         var verticalLineCount = Mathf.Max(0, Mathf.CeilToInt((endX - startX) / spacingValue) + 1);
         var horizontalLineCount = Mathf.Max(0, Mathf.CeilToInt((endY - startY) / spacingValue) + 1);
+        var centerVerticalVisible = minX <= 0f && maxX >= 0f;
+        var centerHorizontalVisible = minY <= 0f && maxY >= 0f;
+        var centerTolerance = Mathf.Max(0.0001f, spacingValue * 0.001f);
         var requiredLineCount = verticalLineCount + horizontalLineCount;
+        if (centerVerticalVisible)
+        {
+            requiredLineCount++;
+        }
+
+        if (centerHorizontalVisible)
+        {
+            requiredLineCount++;
+        }
+
         var worldUnitsPerPixel = (targetCamera.orthographicSize * 2f) / Mathf.Max(1, Screen.height);
         var effectiveLineWidth = Mathf.Max(lineWidth, worldUnitsPerPixel * Mathf.Max(0.1f, minLineWidthPixels));
         EnsureLinePoolCapacity(requiredLineCount);
@@ -157,6 +170,11 @@ public class GridRenderer2D : MonoBehaviour
         for (var i = 0; i < verticalLineCount; i++)
         {
             var x = startX + i * spacingValue;
+            if (Mathf.Abs(x) <= centerTolerance)
+            {
+                continue;
+            }
+
             ConfigureLine(linePool[lineIndex], new Vector3(x, minY, 0f), new Vector3(x, maxY, 0f), effectiveLineWidth);
             lineIndex++;
         }
@@ -164,7 +182,25 @@ public class GridRenderer2D : MonoBehaviour
         for (var i = 0; i < horizontalLineCount; i++)
         {
             var y = startY + i * spacingValue;
+            if (Mathf.Abs(y) <= centerTolerance)
+            {
+                continue;
+            }
+
             ConfigureLine(linePool[lineIndex], new Vector3(minX, y, 0f), new Vector3(maxX, y, 0f), effectiveLineWidth);
+            lineIndex++;
+        }
+
+        var centerLineWidth = effectiveLineWidth * 1.25f;
+        if (centerVerticalVisible)
+        {
+            ConfigureLine(linePool[lineIndex], new Vector3(0f, minY, 0f), new Vector3(0f, maxY, 0f), centerLineWidth);
+            lineIndex++;
+        }
+
+        if (centerHorizontalVisible)
+        {
+            ConfigureLine(linePool[lineIndex], new Vector3(minX, 0f, 0f), new Vector3(maxX, 0f, 0f), centerLineWidth);
             lineIndex++;
         }
 

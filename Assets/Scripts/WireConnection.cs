@@ -46,6 +46,13 @@ public class WireConnection : MonoBehaviour
         public float Amplitude;
         public float Wavelength;
         public bool IsFromTerminalA;
+        public float DistanceOffset;
+    }
+
+    private struct SignalTraversalNode
+    {
+        public ConnectorTerminal Terminal;
+        public float DistanceFromRoot;
     }
 
     private struct GridNode : IEquatable<GridNode>
@@ -136,7 +143,8 @@ public class WireConnection : MonoBehaviour
         for (var i = 0; i < signalSources.Count; i++)
         {
             var source = signalSources[i];
-            var sourceDistance = source.IsFromTerminalA ? distanceFromA : totalLength - distanceFromA;
+            var distanceAlongThisWire = source.IsFromTerminalA ? distanceFromA : totalLength - distanceFromA;
+            var sourceDistance = source.DistanceOffset + Mathf.Max(0f, distanceAlongThisWire);
             sum += EvaluateWave(
                 source.Waveform,
                 sourceDistance,
@@ -940,15 +948,20 @@ public class WireConnection : MonoBehaviour
         }
 
         visitedWires.Add(this);
-        var pending = new Queue<ConnectorTerminal>();
+        var pending = new Queue<SignalTraversalNode>();
         var visitedTerminals = new HashSet<ConnectorTerminal>();
-        pending.Enqueue(rootTerminal);
+        pending.Enqueue(new SignalTraversalNode
+        {
+            Terminal = rootTerminal,
+            DistanceFromRoot = 0f
+        });
         visitedTerminals.Add(rootTerminal);
 
         while (pending.Count > 0)
         {
-            var terminal = pending.Dequeue();
-            TryAddSignalSource(terminal, isFromTerminalA, sourceIds);
+            var traversal = pending.Dequeue();
+            var terminal = traversal.Terminal;
+            TryAddSignalSource(terminal, isFromTerminalA, sourceIds, traversal.DistanceFromRoot);
             if (terminal.OwnerElement != null)
             {
                 continue;
@@ -977,12 +990,16 @@ public class WireConnection : MonoBehaviour
                 }
 
                 visitedTerminals.Add(nextTerminal);
-                pending.Enqueue(nextTerminal);
+                pending.Enqueue(new SignalTraversalNode
+                {
+                    Terminal = nextTerminal,
+                    DistanceFromRoot = traversal.DistanceFromRoot + linked.GetSignalTraversalLength()
+                });
             }
         }
     }
 
-    private void TryAddSignalSource(ConnectorTerminal terminal, bool isFromTerminalA, HashSet<int> sourceIds)
+    private void TryAddSignalSource(ConnectorTerminal terminal, bool isFromTerminalA, HashSet<int> sourceIds, float distanceFromRoot)
     {
         if (!CanEmitSignal(terminal, out var waveform) || terminal == null || terminal.OwnerElement == null)
         {
@@ -995,22 +1012,16 @@ public class WireConnection : MonoBehaviour
             return;
         }
 
-        var rendererComponent = terminal.OwnerElement.GetComponent<Renderer>();
-        var amplitude = 0.5f;
-        var wavelength = 2f;
-        if (rendererComponent != null)
-        {
-            var extents = rendererComponent.bounds.extents;
-            amplitude = Mathf.Max(0.05f, extents.y);
-            wavelength = Mathf.Max(0.1f, extents.x * 4f);
-        }
+        var amplitude = GetDefaultAmplitudeForWaveform(waveform);
+        var wavelength = GetDefaultWavelengthForWaveform(waveform);
 
         signalSources.Add(new SignalSourceInfo
         {
             Waveform = waveform,
             Amplitude = amplitude,
             Wavelength = wavelength,
-            IsFromTerminalA = isFromTerminalA
+            IsFromTerminalA = isFromTerminalA,
+            DistanceOffset = Mathf.Max(0f, distanceFromRoot)
         });
 
         if (sourceIds != null)
@@ -1065,8 +1076,8 @@ public class WireConnection : MonoBehaviour
         {
             var distance = totalLength * i / (sampleCount - 1);
             var sample = SampleAtDistance(distance);
-            var offset = ComputeSignalOffset(distance * 2f, time);
-            sample.point += sample.normal * (offset * 0.5f);
+            var offset = ComputeSignalOffset(distance, time);
+            sample.point += sample.normal * offset;
             sample.point.z = 0f;
             signalPoints.Add(sample.point);
         }
@@ -1121,13 +1132,14 @@ public class WireConnection : MonoBehaviour
         return (fallback, Vector3.up);
     }
 
-    private float ComputeSignalOffset(float distance, float time)
+    private float ComputeSignalOffset(float distanceFromA, float time)
     {
         var sum = 0f;
         for (var i = 0; i < signalSources.Count; i++)
         {
             var source = signalSources[i];
-            var sourceDistance = source.IsFromTerminalA ? distance : totalLength - distance;
+            var distanceAlongThisWire = source.IsFromTerminalA ? distanceFromA : totalLength - distanceFromA;
+            var sourceDistance = source.DistanceOffset + Mathf.Max(0f, distanceAlongThisWire);
             sum += EvaluateWave(
                 source.Waveform,
                 sourceDistance,
@@ -1140,6 +1152,30 @@ public class WireConnection : MonoBehaviour
         return sum;
     }
 
+    private float GetSignalTraversalLength()
+    {
+        if (routedPolyline.Count >= 2)
+        {
+            var length = 0f;
+            for (var i = 0; i < routedPolyline.Count - 1; i++)
+            {
+                length += Vector3.Distance(routedPolyline[i], routedPolyline[i + 1]);
+            }
+
+            if (length > 0.0001f)
+            {
+                return length;
+            }
+        }
+
+        if (terminalA == null || terminalB == null)
+        {
+            return 0f;
+        }
+
+        return Vector3.Distance(terminalA.Position, terminalB.Position);
+    }
+
     private static float EvaluateWave(SignalWaveform waveform, float distance, float time, float wavelength, float frequency, float amplitude)
     {
         switch (waveform)
@@ -1150,6 +1186,32 @@ public class WireConnection : MonoBehaviour
                 return EvaluateSquareWave(distance, time, wavelength, frequency, amplitude);
             default:
                 return EvaluateSemicircleWave(distance, time, wavelength, frequency, amplitude);
+        }
+    }
+
+    private static float GetDefaultAmplitudeForWaveform(SignalWaveform waveform)
+    {
+        switch (waveform)
+        {
+            case SignalWaveform.Triangle:
+                return 0.5f;
+            case SignalWaveform.Square:
+                return 0.5f;
+            default:
+                return 0.5f;
+        }
+    }
+
+    private static float GetDefaultWavelengthForWaveform(SignalWaveform waveform)
+    {
+        switch (waveform)
+        {
+            case SignalWaveform.Triangle:
+                return 2f;
+            case SignalWaveform.Square:
+                return 2f;
+            default:
+                return 2f;
         }
     }
 
