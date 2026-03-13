@@ -9,6 +9,9 @@ public class SemiCircleElementSetup : MonoBehaviour
     private static readonly Color ReceiverColor = new Color(1f, 0.2f, 0.2f, 1f);
     private static readonly Color ConverterColor = new Color(1f, 1f, 1f, 1f);
     private static readonly Color TerminalColor = new Color(1f, 0.92f, 0.1f, 1f);
+    private static readonly Color ConverterInputTerminalColor = new Color(0.2f, 0.45f, 1f, 1f);
+    private static readonly Color ConverterOutputTerminalColor = new Color(1f, 0.2f, 0.2f, 1f);
+    private const float DefaultTerminalScaleInGridUnits = 0.1f;
     private static Mesh circleMesh;
     private static Mesh triangleMesh;
     private static Mesh squareMesh;
@@ -19,7 +22,8 @@ public class SemiCircleElementSetup : MonoBehaviour
     [SerializeField]
     private float bodyDepth = 0.2f;
 
-    private float terminalScale = 0.1f;  // 固定0.1
+    [SerializeField]
+    private float terminalScale = DefaultTerminalScaleInGridUnits;
 
     [SerializeField]
     private float gridSpacing = 1f;
@@ -127,7 +131,7 @@ public class SemiCircleElementSetup : MonoBehaviour
                 terminalObject.gameObject.AddComponent<ConnectorTerminal>();
             }
 
-            SetTerminalVisual(terminalObject.gameObject);
+            SetTerminalVisual(terminalObject.gameObject, expectedNames[i]);
         }
 
         var allTerminals = GetComponentsInChildren<ConnectorTerminal>();
@@ -150,14 +154,34 @@ public class SemiCircleElementSetup : MonoBehaviour
         }
     }
 
-    private void SetTerminalVisual(GameObject terminalObject)
+    private void SetTerminalVisual(GameObject terminalObject, string terminalName)
     {
         var rendererComponent = terminalObject.GetComponent<Renderer>();
         if (rendererComponent != null)
         {
-            rendererComponent.material.color = TerminalColor;
+            rendererComponent.material.color = GetTerminalColor(terminalName);
             rendererComponent.sortingOrder = 10;
         }
+    }
+
+    private Color GetTerminalColor(string terminalName)
+    {
+        if (!IsConverterType(circuitElement.ElementType))
+        {
+            return TerminalColor;
+        }
+
+        if (terminalName == "Terminal_Input")
+        {
+            return ConverterInputTerminalColor;
+        }
+
+        if (terminalName == "Terminal_Output")
+        {
+            return ConverterOutputTerminalColor;
+        }
+
+        return TerminalColor;
     }
 
     private Vector3 SnapToGrid(Vector3 world)

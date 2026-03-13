@@ -7,7 +7,8 @@ public class BackpackScrollViewUI : MonoBehaviour
 
     private Vector2 backpackScrollPosition;
     private GUIStyle backpackItemStyle;
-    private Renderer backpackPanelRenderer;
+    [SerializeField]
+    private float backpackScreenWidthRatio = 0.22f;
     private Texture2D blueCircleIconTexture;
     private Texture2D redCircleIconTexture;
     private Texture2D whiteCircleIconTexture;
@@ -28,6 +29,17 @@ public class BackpackScrollViewUI : MonoBehaviour
 
     private void OnGUI()
     {
+        if (!UI.ShouldRenderBackpackUI)
+        {
+            ResetPointerState();
+            return;
+        }
+
+        if (!UI.IsBackpackOpen)
+        {
+            ResetPointerState();
+        }
+
         DrawBackpackScrollView();
     }
 
@@ -40,6 +52,9 @@ public class BackpackScrollViewUI : MonoBehaviour
         }
 
         EnsureBackpackStyles();
+        var oldColor = GUI.color;
+        var visibility = Mathf.Clamp01(UI.BackpackOpenProgress);
+        GUI.color = new Color(1f, 1f, 1f, visibility);
         GUI.DrawTexture(panelRectScreen, holoBackgroundTexture, ScaleMode.StretchToFill, true);
         var viewRect = new Rect(panelRectScreen.x + 4f, panelRectScreen.y + 4f, panelRectScreen.width - 8f, panelRectScreen.height - 8f);
         var entries = BackpackItemSpawner.GetInventoryEntries();
@@ -66,52 +81,15 @@ public class BackpackScrollViewUI : MonoBehaviour
         }
 
         GUI.EndScrollView();
+        GUI.color = oldColor;
     }
 
     private Rect GetBackpackPanelScreenRect()
     {
-        if (backpackPanelRenderer == null)
-        {
-            var panel = GameObject.Find("BackpackPanel");
-            if (panel != null)
-            {
-                backpackPanelRenderer = panel.GetComponent<Renderer>();
-            }
-        }
-
-        if (backpackPanelRenderer == null || Camera.main == null)
-        {
-            var fallbackWidth = Screen.width * 0.22f;
-            return new Rect(0f, 0f, fallbackWidth, Screen.height);
-        }
-
-        var bounds = backpackPanelRenderer.bounds;
-        var points = new Vector3[4]
-        {
-            new Vector3(bounds.min.x, bounds.min.y, 0f),
-            new Vector3(bounds.min.x, bounds.max.y, 0f),
-            new Vector3(bounds.max.x, bounds.min.y, 0f),
-            new Vector3(bounds.max.x, bounds.max.y, 0f)
-        };
-
-        var xMin = float.PositiveInfinity;
-        var xMax = float.NegativeInfinity;
-        var yMin = float.PositiveInfinity;
-        var yMax = float.NegativeInfinity;
-        for (var i = 0; i < points.Length; i++)
-        {
-            var screen = Camera.main.WorldToScreenPoint(points[i]);
-            xMin = Mathf.Min(xMin, screen.x);
-            xMax = Mathf.Max(xMax, screen.x);
-            yMin = Mathf.Min(yMin, screen.y);
-            yMax = Mathf.Max(yMax, screen.y);
-        }
-
-        var left = Mathf.Clamp(xMin, 0f, Screen.width);
-        var right = Mathf.Clamp(xMax, 0f, Screen.width);
-        var top = Mathf.Clamp(Screen.height - yMax, 0f, Screen.height);
-        var bottom = Mathf.Clamp(Screen.height - yMin, 0f, Screen.height);
-        return Rect.MinMaxRect(left, top, right, bottom);
+        var panelWidth = Mathf.Clamp(Screen.width * backpackScreenWidthRatio, 180f, Screen.width * 0.45f);
+        var progress = Mathf.Clamp01(UI.BackpackOpenProgress);
+        var panelHeight = Mathf.Max(0f, Screen.height * progress);
+        return new Rect(0f, 0f, panelWidth, panelHeight);
     }
 
     private Vector3 GetFieldSpawnPosition()
@@ -206,6 +184,13 @@ public class BackpackScrollViewUI : MonoBehaviour
         hasSpawnedDuringDrag = false;
         pointerDownEntryIndex = -1;
         currentEvent.Use();
+    }
+
+    private void ResetPointerState()
+    {
+        isBackpackPointerDown = false;
+        hasSpawnedDuringDrag = false;
+        pointerDownEntryIndex = -1;
     }
 
     private void EnsureBackpackStyles()

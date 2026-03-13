@@ -111,13 +111,13 @@ public class DraggablePlacedComponent : MonoBehaviour
         }
 
         var snapped = SnapToGrid(transform.position);
-        if (IsInsideBackpackArea(snapped))
+        if (UI.IsBackpackOpen && IsInsideBackpackArea(snapped))
         {
             ReclaimToBackpack();
             return;
         }
 
-        if (restrictToFieldArea)
+        if (restrictToFieldArea && UI.IsBackpackOpen)
         {
             var minFieldX = GetBackpackBoundaryX();
             snapped.x = Mathf.Max(minFieldX + 0.5f, snapped.x);
