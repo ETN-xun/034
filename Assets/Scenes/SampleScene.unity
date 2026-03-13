@@ -1092,6 +1092,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   dragStartThresholdPixels: 8
+  backpackScreenWidthRatio: 0.22
 --- !u!114 &856881796
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1300,8 +1301,6 @@ SceneRoots:
   - {fileID: 519420032}
   - {fileID: 619394802}
   - {fileID: 1890516372}
-  - {fileID: 351037704}
-  - {fileID: 409365997}
   - {fileID: 856881794}
   - {fileID: 916787468}
   - {fileID: 248450369}
