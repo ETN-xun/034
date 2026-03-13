@@ -152,10 +152,10 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 248450369}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0.5}
-  m_AnchorMax: {x: 0, y: 0.5}
-  m_AnchoredPosition: {x: 25, y: 0}
-  m_SizeDelta: {x: 50, y: 50}
+  m_AnchorMin: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 1}
+  m_AnchoredPosition: {x: 12.5, y: -12.5}
+  m_SizeDelta: {x: 25, y: 25}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &203853996
 MonoBehaviour:
@@ -214,7 +214,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0.18039216}
+  m_Color: {r: 1, g: 0, b: 0, a: 0.18039216}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -355,8 +355,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   backPackBtn: {fileID: 203853996}
-  backPackPanel: {fileID: 409365990}
-  scaleY: 10
+  isShowing: 1
+  toggleDuration: 0.5
+  openEase: 27
+  closeEase: 26
 --- !u!1 &327631141
 GameObject:
   m_ObjectHideFlags: 0
@@ -771,7 +773,7 @@ MeshRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 409365990}
-  m_Enabled: 1
+  m_Enabled: 0
   m_CastShadows: 1
   m_ReceiveShadows: 1
   m_DynamicOccludee: 1
@@ -816,7 +818,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 409365990}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 360c33d2a92adf046bcfc7c6a232f5c3, type: 3}
   m_Name: 
@@ -1164,6 +1166,11 @@ MonoBehaviour:
   backpackViewportWidth: 0.2
   lineWidth: 0.02
   gridColor: {r: 1, g: 1, b: 1, a: 1}
+  zoomSpeed: 1.2
+  minOrthographicSize: 2
+  maxOrthographicSize: 20
+  maxLinesPerAxis: 240
+  minLineWidthPixels: 1
 --- !u!114 &916787467
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1190,7 +1197,6 @@ MonoBehaviour:
   terminalHoverCursorYellow: {fileID: 0}
   cursorHotspot: {x: 8, y: 8}
   terminalPickRadius: 0.3
-  junctionPointScale: 0.22
   junctionConnectDistance: 0.2
   junctionZOffset: -0.04
 --- !u!4 &916787468

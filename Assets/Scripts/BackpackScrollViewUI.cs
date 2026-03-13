@@ -7,7 +7,6 @@ public class BackpackScrollViewUI : MonoBehaviour
 
     private Vector2 backpackScrollPosition;
     private GUIStyle backpackItemStyle;
-    [SerializeField]
     private float backpackScreenWidthRatio = 0.22f;
     private Texture2D blueCircleIconTexture;
     private Texture2D redCircleIconTexture;
