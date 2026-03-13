@@ -70,6 +70,13 @@ public class WiringManager : MonoBehaviour
     private Material lineMaterial;
     public bool AreTerminalsVisible => startTerminal != null;
     public float GridSpacing => Mathf.Max(0.01f, gridSpacing);
+    public Material SharedLineMaterial => lineMaterial;
+    public float WireWidth => wireWidth;
+    public Color WireColor => wireColor;
+    public Color SelectedWireOutlineColor => selectedWireOutlineColor;
+    public Color SignalColor => signalColor;
+    public float SignalWidth => signalWidth;
+    public float SignalFrequency => signalFrequency;
 
     private void Awake()
     {
@@ -90,6 +97,7 @@ public class WiringManager : MonoBehaviour
         lineMaterial.color = wireColor;
         EnsureCursorTexturesLoaded();
         SetCursorWhite();
+        RebuildConnectionsFromScene();
     }
 
     private void OnDestroy()
@@ -150,6 +158,52 @@ public class WiringManager : MonoBehaviour
             }
 
             output.Add(wire);
+        }
+    }
+
+    public void RegisterWireConnection(WireConnection wire)
+    {
+        if (wire == null || wireConnections.Contains(wire))
+        {
+            return;
+        }
+
+        wireConnections.Add(wire);
+    }
+
+    public void UnregisterWireConnection(WireConnection wire)
+    {
+        if (wire == null)
+        {
+            return;
+        }
+
+        wireConnections.Remove(wire);
+        if (selectedWire == wire)
+        {
+            selectedWire = null;
+        }
+    }
+
+    public void RebuildConnectionsFromScene()
+    {
+        wireConnections.Clear();
+        var levelRoot = BackpackItemSpawner.GetOrCreateLevelRoot();
+        if (levelRoot == null)
+        {
+            return;
+        }
+
+        var sceneWires = levelRoot.GetComponentsInChildren<WireConnection>(true);
+        for (var i = 0; i < sceneWires.Length; i++)
+        {
+            var wire = sceneWires[i];
+            if (wire == null || wireConnections.Contains(wire))
+            {
+                continue;
+            }
+
+            wireConnections.Add(wire);
         }
     }
 
@@ -271,7 +325,7 @@ public class WiringManager : MonoBehaviour
         }
     }
 
-    private void CreateWire(ConnectorTerminal from, ConnectorTerminal to, IReadOnlyList<Vector3> bendPoints)
+    private WireConnection CreateWire(ConnectorTerminal from, ConnectorTerminal to, IReadOnlyList<Vector3> bendPoints)
     {
         var wireObject = new GameObject("Wire");
         BackpackItemSpawner.AttachToLevelRoot(wireObject.transform);
@@ -292,6 +346,7 @@ public class WiringManager : MonoBehaviour
             signalWidth,
             signalFrequency);
         wireConnections.Add(connection);
+        return connection;
     }
 
     private void CreatePreviewLine()
@@ -352,7 +407,7 @@ public class WiringManager : MonoBehaviour
         }
 
         var targetWire = FindWireAtMouse();
-        if (targetWire == null || targetWire.IsLocked)
+        if (targetWire == null)
         {
             return false;
         }
@@ -400,6 +455,7 @@ public class WiringManager : MonoBehaviour
             return false;
         }
 
+        var keepLocked = wire.IsLocked;
         wireConnections.Remove(wire);
         if (selectedWire == wire)
         {
@@ -407,8 +463,21 @@ public class WiringManager : MonoBehaviour
         }
 
         Destroy(wire.gameObject);
-        CreateWire(terminalA, junctionTerminal, bendsFromA);
-        CreateWire(junctionTerminal, terminalB, bendsFromB);
+        var first = CreateWire(terminalA, junctionTerminal, bendsFromA);
+        var second = CreateWire(junctionTerminal, terminalB, bendsFromB);
+        if (keepLocked)
+        {
+            if (first != null)
+            {
+                first.SetLocked(true);
+            }
+
+            if (second != null)
+            {
+                second.SetLocked(true);
+            }
+        }
+
         return true;
     }
 

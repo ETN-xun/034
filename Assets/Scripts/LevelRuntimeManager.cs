@@ -15,6 +15,9 @@ public class LevelRuntimeManager : MonoBehaviour
     [SerializeField]
     private float winCheckInterval = 0.2f;
 
+    [SerializeField]
+    private bool cannotWin;
+
     private int currentLevelIndex;
     private float nextWinCheckTime;
     private readonly List<WireConnection> receiverWires = new List<WireConnection>();
@@ -26,6 +29,11 @@ public class LevelRuntimeManager : MonoBehaviour
 
     public int CurrentLevelIndex => currentLevelIndex;
     public string StatusText => statusText;
+    public bool CannotWin
+    {
+        get => cannotWin;
+        set => cannotWin = value;
+    }
 
     private void Awake()
     {
@@ -65,6 +73,12 @@ public class LevelRuntimeManager : MonoBehaviour
             return;
         }
 
+        if (cannotWin)
+        {
+            SetStatus($"关卡 {BuildLevelName(currentLevelIndex)} 已满足获胜条件，但“无法获胜”已开启，保持当前关卡");
+            return;
+        }
+
         var previous = currentLevelIndex;
         LoadLevel(previous + 1);
         SetStatus($"关卡 {BuildLevelName(previous)} 已获胜，已切换到 {BuildLevelName(currentLevelIndex)}");
@@ -83,8 +97,8 @@ public class LevelRuntimeManager : MonoBehaviour
     public int AddItemsToBackpack(CircuitElementType type, int amount, int length, int width)
     {
         var safeAmount = Mathf.Max(0, amount);
-        var safeLength = Mathf.Max(1, length);
-        var safeWidth = Mathf.Max(1, width);
+        var safeLength = Mathf.Max(0, length);
+        var safeWidth = Mathf.Max(0, width);
         var changed = BackpackItemSpawner.AddInventoryToType(type, safeAmount, safeLength, safeWidth);
         SetStatus($"已添加：{type} {safeLength}x{safeWidth} x {safeAmount}，影响槽位：{changed}");
         Debug.Log($"GM Add Backpack Items: type={type}, length={safeLength}, width={safeWidth}, amount={safeAmount}, affectedSpawners={changed}");
@@ -121,6 +135,11 @@ public class LevelRuntimeManager : MonoBehaviour
         currentLevelIndex = safeLevelIndex;
         if (prefab == null)
         {
+            if (WiringManager.Instance != null)
+            {
+                WiringManager.Instance.RebuildConnectionsFromScene();
+            }
+
             SetStatus($"未找到关卡：{levelName}，当前为空关卡");
             return;
         }
@@ -144,6 +163,11 @@ public class LevelRuntimeManager : MonoBehaviour
             }
 
             Destroy(loaded);
+        }
+
+        if (WiringManager.Instance != null)
+        {
+            WiringManager.Instance.RebuildConnectionsFromScene();
         }
 
         SetStatus($"已加载关卡：{levelName}");
@@ -252,13 +276,18 @@ public class LevelRuntimeManager : MonoBehaviour
             return false;
         }
 
-        BuildExpectedSignalParams(receiver, out var expectedAmplitude, out var expectedWavelength);
-
         WiringManager.Instance.GetConnectionsForElement(receiver, receiverWires);
+        if (receiver.Width <= 0)
+        {
+            return IsZeroSignalReceiverMatched(receiver);
+        }
+
         if (receiverWires.Count == 0)
         {
             return false;
         }
+
+        BuildExpectedSignalParams(receiver, out var expectedAmplitude, out var expectedWavelength);
 
         for (var i = 0; i < receiverWires.Count; i++)
         {
@@ -288,10 +317,70 @@ public class LevelRuntimeManager : MonoBehaviour
         return false;
     }
 
+    private bool IsZeroSignalReceiverMatched(CircuitElement receiver)
+    {
+        if (receiverWires.Count == 0)
+        {
+            return true;
+        }
+
+        for (var i = 0; i < receiverWires.Count; i++)
+        {
+            var wire = receiverWires[i];
+            if (wire == null)
+            {
+                continue;
+            }
+
+            if (!wire.TryGetSignalShapeParams(out _, out _, out var frequency))
+            {
+                return true;
+            }
+
+            if (IsWireSignalZeroAtReceiver(wire, receiver, frequency))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsWireSignalZeroAtReceiver(WireConnection wire, CircuitElement receiver, float frequency)
+    {
+        if (wire == null || receiver == null)
+        {
+            return false;
+        }
+
+        const int sampleCount = 9;
+        const float zeroTolerance = 0.01f;
+        var safeFrequency = Mathf.Max(0.01f, frequency);
+        var period = 1f / safeFrequency;
+        var startTime = Time.time;
+        for (var i = 0; i < sampleCount; i++)
+        {
+            var t = startTime + period * i / (sampleCount - 1);
+            if (!wire.TryGetSignalAtElement(receiver, t, out var signalValue))
+            {
+                return false;
+            }
+
+            if (Mathf.Abs(signalValue) > zeroTolerance)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static void BuildExpectedSignalParams(CircuitElement receiver, out float amplitude, out float wavelength)
     {
-        amplitude = 0.5f;
-        wavelength = 2f;
+        var widthScale = receiver != null ? receiver.WidthScaleMultiplier : 1f;
+        var lengthScale = receiver != null ? receiver.LengthScaleMultiplier : 1f;
+        amplitude = 0.5f * Mathf.Max(0.01f, widthScale);
+        wavelength = 2f * Mathf.Max(0.01f, lengthScale);
     }
 
     private static bool IsSignalSizeMatch(float expectedAmplitude, float expectedWavelength, float actualAmplitude, float actualWavelength)

@@ -53,8 +53,8 @@ public class RuntimeGmPanel : MonoBehaviour
 
         Instance = this;
         addAmountText = addAmount.ToString();
-        addLengthText = Mathf.Max(1, addLength).ToString();
-        addWidthText = Mathf.Max(1, addWidth).ToString();
+        addLengthText = Mathf.Max(0, addLength).ToString();
+        addWidthText = Mathf.Max(0, addWidth).ToString();
     }
 
     private void OnDestroy()
@@ -78,8 +78,8 @@ public class RuntimeGmPanel : MonoBehaviour
     [ContextMenu("GM/向背包添加配置数量元器件")]
     public void AddConfiguredItemsToBackpack()
     {
-        addLength = Mathf.Max(1, addLength);
-        addWidth = Mathf.Max(1, addWidth);
+        addLength = Mathf.Max(0, addLength);
+        addWidth = Mathf.Max(0, addWidth);
         EnsureRuntimeManager().AddItemsToBackpack(addType, addAmount, addLength, addWidth);
     }
 
@@ -159,8 +159,8 @@ public class RuntimeGmPanel : MonoBehaviour
                 && int.TryParse(addWidthText, out var width))
             {
                 addAmount = Mathf.Max(0, amount);
-                addLength = Mathf.Max(1, length);
-                addWidth = Mathf.Max(1, width);
+                addLength = Mathf.Max(0, length);
+                addWidth = Mathf.Max(0, width);
                 AddConfiguredItemsToBackpack();
             }
             else
@@ -192,6 +192,15 @@ public class RuntimeGmPanel : MonoBehaviour
         }
 
         GUILayout.EndHorizontal();
+
+        GUILayout.Space(8f);
+        var runtime = EnsureRuntimeManager();
+        var cannotWin = GUILayout.Toggle(runtime.CannotWin, "无法获胜");
+        if (cannotWin != runtime.CannotWin)
+        {
+            runtime.CannotWin = cannotWin;
+            runtime.SetStatus(cannotWin ? "已开启：无法获胜" : "已关闭：无法获胜");
+        }
 
         GUILayout.Space(8f);
         GUILayout.Label(EnsureRuntimeManager().StatusText, GUILayout.Height(36f));

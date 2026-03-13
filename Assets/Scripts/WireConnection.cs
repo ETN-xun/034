@@ -184,16 +184,22 @@ public class WireConnection : MonoBehaviour
         }
 
         ConfigureLineRenderer(lineRenderer, lineMaterial, width, color, 10);
-        var outlineObject = new GameObject("WireOutline");
-        outlineObject.transform.SetParent(transform, false);
-        outlineRenderer = outlineObject.AddComponent<LineRenderer>();
-        ConfigureLineRenderer(outlineRenderer, lineMaterial, width + 0.08f, outlineColor, 9);
+        outlineRenderer = EnsureChildRenderer(
+            outlineRenderer,
+            "WireOutline",
+            lineMaterial,
+            width + 0.08f,
+            outlineColor,
+            9);
         outlineRenderer.enabled = false;
 
-        var signalObject = new GameObject("SignalWave");
-        signalObject.transform.SetParent(transform, false);
-        signalRenderer = signalObject.AddComponent<LineRenderer>();
-        ConfigureLineRenderer(signalRenderer, lineMaterial, signalWidth, signalColor, 12);
+        signalRenderer = EnsureChildRenderer(
+            signalRenderer,
+            "SignalWave",
+            lineMaterial,
+            signalWidth,
+            signalColor,
+            12);
         signalRenderer.enabled = false;
 
         signalFrequency = Mathf.Max(0.01f, frequency);
@@ -201,8 +207,31 @@ public class WireConnection : MonoBehaviour
         UpdateLine();
     }
 
+    private void Awake()
+    {
+        EnsureRuntimeComponents();
+    }
+
+    private void OnEnable()
+    {
+        EnsureRuntimeComponents();
+        if (WiringManager.Instance != null)
+        {
+            WiringManager.Instance.RegisterWireConnection(this);
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (WiringManager.Instance != null)
+        {
+            WiringManager.Instance.UnregisterWireConnection(this);
+        }
+    }
+
     private void LateUpdate()
     {
+        EnsureRuntimeComponents();
         UpdateLine();
     }
 
@@ -273,6 +302,11 @@ public class WireConnection : MonoBehaviour
     public void ToggleLock()
     {
         isLocked = !isLocked;
+    }
+
+    public void SetLocked(bool locked)
+    {
+        isLocked = locked;
     }
 
     public float DistanceToPoint(Vector3 point)
@@ -443,6 +477,145 @@ public class WireConnection : MonoBehaviour
         renderer.startColor = color;
         renderer.endColor = color;
         renderer.sortingOrder = sortingOrder;
+    }
+
+    private void EnsureRuntimeComponents()
+    {
+        if (lineRenderer == null)
+        {
+            lineRenderer = GetComponent<LineRenderer>();
+        }
+
+        if (lineRenderer == null)
+        {
+            return;
+        }
+
+        var manager = WiringManager.Instance;
+        var material = lineRenderer.material;
+        if (manager != null && manager.SharedLineMaterial != null)
+        {
+            material = manager.SharedLineMaterial;
+        }
+
+        if (material == null)
+        {
+            material = new Material(Shader.Find("Sprites/Default"));
+        }
+
+        lineRenderer.material = material;
+
+        var wireWidth = manager != null
+            ? Mathf.Max(0.001f, manager.WireWidth)
+            : (lineRenderer.startWidth > 0f ? lineRenderer.startWidth : 0.05f);
+        lineRenderer.startWidth = wireWidth;
+        lineRenderer.endWidth = wireWidth;
+        var wireColor = manager != null ? manager.WireColor : Color.yellow;
+        lineRenderer.startColor = wireColor;
+        lineRenderer.endColor = wireColor;
+        lineRenderer.material.color = wireColor;
+
+        lineRenderer.useWorldSpace = true;
+        lineRenderer.numCapVertices = Mathf.Max(8, lineRenderer.numCapVertices);
+        lineRenderer.sortingOrder = 10;
+        if (signalFrequency <= 0f)
+        {
+            signalFrequency = manager != null ? Mathf.Max(0.01f, manager.SignalFrequency) : 0.8f;
+        }
+
+        outlineRenderer = EnsureChildRenderer(
+            outlineRenderer,
+            "WireOutline",
+            material,
+            lineRenderer.startWidth + 0.08f,
+            manager != null ? manager.SelectedWireOutlineColor : Color.cyan,
+            9);
+        signalRenderer = EnsureChildRenderer(
+            signalRenderer,
+            "SignalWave",
+            material,
+            manager != null ? manager.SignalWidth : 0.03f,
+            manager != null ? manager.SignalColor : Color.white,
+            12);
+    }
+
+    private LineRenderer EnsureChildRenderer(
+        LineRenderer renderer,
+        string childName,
+        Material material,
+        float width,
+        Color color,
+        int sortingOrder)
+    {
+        if (renderer != null && renderer.transform.parent != transform)
+        {
+            renderer = null;
+        }
+
+        var duplicateRenderers = new List<LineRenderer>();
+        for (var i = 0; i < transform.childCount; i++)
+        {
+            var child = transform.GetChild(i);
+            if (child == null || child.name != childName)
+            {
+                continue;
+            }
+
+            var childRenderer = child.GetComponent<LineRenderer>();
+            if (childRenderer == null)
+            {
+                continue;
+            }
+
+            if (renderer == null)
+            {
+                renderer = childRenderer;
+            }
+            else if (childRenderer != renderer)
+            {
+                duplicateRenderers.Add(childRenderer);
+            }
+        }
+
+        for (var i = 0; i < duplicateRenderers.Count; i++)
+        {
+            var duplicate = duplicateRenderers[i];
+            if (duplicate == null)
+            {
+                continue;
+            }
+
+            if (Application.isPlaying)
+            {
+                Destroy(duplicate.gameObject);
+            }
+            else
+            {
+                DestroyImmediate(duplicate.gameObject);
+            }
+        }
+
+        if (renderer == null)
+        {
+            var childObject = new GameObject(childName);
+            childObject.transform.SetParent(transform, false);
+            renderer = childObject.AddComponent<LineRenderer>();
+            renderer.enabled = false;
+        }
+
+        renderer.material = material;
+
+        var safeWidth = Mathf.Max(0.001f, width);
+        renderer.startWidth = safeWidth;
+        renderer.endWidth = safeWidth;
+
+        renderer.useWorldSpace = true;
+        renderer.numCapVertices = Mathf.Max(8, renderer.numCapVertices);
+        renderer.sortingOrder = sortingOrder;
+        renderer.startColor = color;
+        renderer.endColor = color;
+
+        return renderer;
     }
 
     private static void AddRoutedSegment(
@@ -931,8 +1104,18 @@ public class WireConnection : MonoBehaviour
         for (var i = 0; i < signalSources.Count; i++)
         {
             var source = signalSources[i];
-            signalAmplitude = Mathf.Max(signalAmplitude, source.Amplitude);
+            if (source.Waveform != signalWaveform)
+            {
+                continue;
+            }
+
+            signalAmplitude += source.Amplitude;
             signalWavelength = Mathf.Min(signalWavelength, source.Wavelength);
+        }
+
+        if (signalWavelength == float.MaxValue)
+        {
+            signalWavelength = 1f;
         }
     }
 
@@ -1012,8 +1195,8 @@ public class WireConnection : MonoBehaviour
             return;
         }
 
-        var amplitude = GetDefaultAmplitudeForWaveform(waveform);
-        var wavelength = GetDefaultWavelengthForWaveform(waveform);
+        var amplitude = GetSignalAmplitudeForElement(terminal.OwnerElement);
+        var wavelength = GetSignalWavelengthForElement(terminal.OwnerElement);
 
         signalSources.Add(new SignalSourceInfo
         {
@@ -1189,30 +1372,16 @@ public class WireConnection : MonoBehaviour
         }
     }
 
-    private static float GetDefaultAmplitudeForWaveform(SignalWaveform waveform)
+    private static float GetSignalAmplitudeForElement(CircuitElement element)
     {
-        switch (waveform)
-        {
-            case SignalWaveform.Triangle:
-                return 0.5f;
-            case SignalWaveform.Square:
-                return 0.5f;
-            default:
-                return 0.5f;
-        }
+        var widthScale = element != null ? element.WidthScaleMultiplier : 1f;
+        return 0.5f * Mathf.Max(0.01f, widthScale);
     }
 
-    private static float GetDefaultWavelengthForWaveform(SignalWaveform waveform)
+    private static float GetSignalWavelengthForElement(CircuitElement element)
     {
-        switch (waveform)
-        {
-            case SignalWaveform.Triangle:
-                return 2f;
-            case SignalWaveform.Square:
-                return 2f;
-            default:
-                return 2f;
-        }
+        var lengthScale = element != null ? element.LengthScaleMultiplier : 1f;
+        return 2f * Mathf.Max(0.01f, lengthScale);
     }
 
     public static float EvaluateSemicircleWave(float distance, float time, float wavelength, float frequency, float amplitude)

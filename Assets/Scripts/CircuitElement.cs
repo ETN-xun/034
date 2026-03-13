@@ -53,6 +53,6 @@ public class CircuitElement : MonoBehaviour
 
     private static int NormalizeDimension(int value)
     {
-        return Mathf.Max(1, value);
+        return Mathf.Max(0, value);
     }
 }

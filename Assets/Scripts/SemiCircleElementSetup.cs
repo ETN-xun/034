@@ -12,6 +12,7 @@ public class SemiCircleElementSetup : MonoBehaviour
     private static readonly Color ConverterInputTerminalColor = new Color(0.2f, 0.45f, 1f, 1f);
     private static readonly Color ConverterOutputTerminalColor = new Color(1f, 0.2f, 0.2f, 1f);
     private const float DefaultTerminalScaleInGridUnits = 0.1f;
+    private const float JunctionVisualScaleInGridUnits = 0.12f;
     private static Mesh circleMesh;
     private static Mesh triangleMesh;
     private static Mesh squareMesh;
@@ -82,11 +83,18 @@ public class SemiCircleElementSetup : MonoBehaviour
         var spacing = Mathf.Max(0.01f, gridSpacing);
         var radius = Mathf.Max(0.05f, bodyRadiusInGridUnits * spacing);
         var diameter = radius * 2f;
+        var useJunctionVisual = IsJunctionVisualMode();
         var lengthScale = circuitElement != null ? circuitElement.LengthScaleMultiplier : 1f;
         var widthScale = circuitElement != null ? circuitElement.WidthScaleMultiplier : 1f;
+        var bodyScaleX = useJunctionVisual
+            ? Mathf.Max(0.06f, JunctionVisualScaleInGridUnits * spacing)
+            : Mathf.Max(0.05f, diameter * lengthScale);
+        var bodyScaleY = useJunctionVisual
+            ? Mathf.Max(0.06f, JunctionVisualScaleInGridUnits * spacing)
+            : Mathf.Max(0.05f, diameter * widthScale);
         transform.localScale = new Vector3(
-            Mathf.Max(0.05f, diameter * lengthScale),
-            Mathf.Max(0.05f, diameter * widthScale),
+            bodyScaleX,
+            bodyScaleY,
             Mathf.Max(0.01f, bodyDepth));
         transform.position = SnapToGrid(transform.position);
         EnsureBodyShape();
@@ -209,7 +217,8 @@ public class SemiCircleElementSetup : MonoBehaviour
             gameObject.AddComponent<MeshRenderer>();
         }
 
-        switch (GetShapeCategory(circuitElement.ElementType))
+        var shape = IsJunctionVisualMode() ? ShapeCategory.Circle : GetShapeCategory(circuitElement.ElementType);
+        switch (shape)
         {
             case ShapeCategory.Triangle:
                 meshFilter.mesh = GetTriangleMesh();
@@ -238,7 +247,7 @@ public class SemiCircleElementSetup : MonoBehaviour
             }
         }
 
-        var shape = GetShapeCategory(circuitElement.ElementType);
+        var shape = IsJunctionVisualMode() ? ShapeCategory.Circle : GetShapeCategory(circuitElement.ElementType);
         if (shape == ShapeCategory.Circle)
         {
             var circleCollider = gameObject.AddComponent<MeshCollider>();
@@ -303,6 +312,11 @@ public class SemiCircleElementSetup : MonoBehaviour
         var lengthScale = circuitElement != null ? circuitElement.LengthScaleMultiplier : 1f;
         var widthScale = circuitElement != null ? circuitElement.WidthScaleMultiplier : 1f;
         return new Vector2(baseExtent * lengthScale, baseExtent * widthScale);
+    }
+
+    private bool IsJunctionVisualMode()
+    {
+        return circuitElement != null && (circuitElement.Length <= 0 || circuitElement.Width <= 0);
     }
 
     private static string[] BuildFourWayTerminalNames()
