@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 #if UNITY_EDITOR
@@ -18,12 +19,25 @@ public class LevelRuntimeManager : MonoBehaviour
     [SerializeField]
     private bool cannotWin;
 
+    [SerializeField]
+    private float levelTransitionFadeOutDuration = 0.35f;
+
+    [SerializeField]
+    private float levelTransitionBlackHoldDuration = 0.1f;
+
+    [SerializeField]
+    private float levelTransitionFadeInDuration = 0.35f;
+
     private int currentLevelIndex;
     private float nextWinCheckTime;
     private readonly List<WireConnection> receiverWires = new List<WireConnection>();
     private bool waitingOverwriteConfirm;
     private string pendingOverwritePath = string.Empty;
     private string statusText = string.Empty;
+    private Texture2D transitionOverlayTexture;
+    private float transitionOverlayAlpha;
+    private bool isTransitioningLevel;
+    private Coroutine levelTransitionCoroutine;
     private const string LevelPrefix = "Level";
     private const string LevelResourceFolder = "Prefabs";
 
@@ -44,10 +58,17 @@ public class LevelRuntimeManager : MonoBehaviour
         }
 
         Instance = this;
+        EnsureTransitionOverlayTexture();
     }
 
     private void OnDestroy()
     {
+        if (transitionOverlayTexture != null)
+        {
+            Destroy(transitionOverlayTexture);
+            transitionOverlayTexture = null;
+        }
+
         if (Instance == this)
         {
             Instance = null;
@@ -62,6 +83,11 @@ public class LevelRuntimeManager : MonoBehaviour
 
     private void Update()
     {
+        if (isTransitioningLevel)
+        {
+            return;
+        }
+
         if (Time.time < nextWinCheckTime)
         {
             return;
@@ -79,9 +105,26 @@ public class LevelRuntimeManager : MonoBehaviour
             return;
         }
 
-        var previous = currentLevelIndex;
-        LoadLevel(previous + 1);
-        SetStatus($"关卡 {BuildLevelName(previous)} 已获胜，已切换到 {BuildLevelName(currentLevelIndex)}");
+        BeginNextLevelTransition();
+    }
+
+    private void OnGUI()
+    {
+        if (transitionOverlayAlpha <= 0.001f)
+        {
+            return;
+        }
+
+        EnsureTransitionOverlayTexture();
+        if (transitionOverlayTexture == null)
+        {
+            return;
+        }
+
+        var previousColor = GUI.color;
+        GUI.color = new Color(0f, 0f, 0f, Mathf.Clamp01(transitionOverlayAlpha));
+        GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), transitionOverlayTexture);
+        GUI.color = previousColor;
     }
 
     public void SetStatus(string message)
@@ -107,12 +150,14 @@ public class LevelRuntimeManager : MonoBehaviour
 
     public void ResetCurrentLevel()
     {
+        CancelLevelTransition();
         LoadLevel(currentLevelIndex);
         SetStatus($"已重置 {BuildLevelName(currentLevelIndex)}");
     }
 
     public void ClearCurrentLevel()
     {
+        CancelLevelTransition();
         ClearLevelRootChildren();
         BackpackItemSpawner.ClearInventory();
         SetStatus($"已清空 {BuildLevelName(currentLevelIndex)}");
@@ -171,6 +216,79 @@ public class LevelRuntimeManager : MonoBehaviour
         }
 
         SetStatus($"已加载关卡：{levelName}");
+    }
+
+    private void BeginNextLevelTransition()
+    {
+        if (isTransitioningLevel)
+        {
+            return;
+        }
+
+        var previousLevelIndex = currentLevelIndex;
+        var nextLevelIndex = previousLevelIndex + 1;
+        levelTransitionCoroutine = StartCoroutine(PlayLevelTransition(previousLevelIndex, nextLevelIndex));
+    }
+
+    private IEnumerator PlayLevelTransition(int previousLevelIndex, int nextLevelIndex)
+    {
+        isTransitioningLevel = true;
+        yield return FadeTransitionOverlay(1f, levelTransitionFadeOutDuration);
+        LoadLevel(nextLevelIndex);
+        SetStatus($"关卡 {BuildLevelName(previousLevelIndex)} 已获胜，已切换到 {BuildLevelName(currentLevelIndex)}");
+        if (levelTransitionBlackHoldDuration > 0f)
+        {
+            yield return new WaitForSeconds(levelTransitionBlackHoldDuration);
+        }
+
+        yield return FadeTransitionOverlay(0f, levelTransitionFadeInDuration);
+        isTransitioningLevel = false;
+        levelTransitionCoroutine = null;
+    }
+
+    private IEnumerator FadeTransitionOverlay(float targetAlpha, float duration)
+    {
+        var startAlpha = transitionOverlayAlpha;
+        if (duration <= 0f)
+        {
+            transitionOverlayAlpha = Mathf.Clamp01(targetAlpha);
+            yield break;
+        }
+
+        var elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            var t = Mathf.Clamp01(elapsed / duration);
+            transitionOverlayAlpha = Mathf.Lerp(startAlpha, targetAlpha, t);
+            yield return null;
+        }
+
+        transitionOverlayAlpha = Mathf.Clamp01(targetAlpha);
+    }
+
+    private void CancelLevelTransition()
+    {
+        if (levelTransitionCoroutine != null)
+        {
+            StopCoroutine(levelTransitionCoroutine);
+            levelTransitionCoroutine = null;
+        }
+
+        isTransitioningLevel = false;
+        transitionOverlayAlpha = 0f;
+    }
+
+    private void EnsureTransitionOverlayTexture()
+    {
+        if (transitionOverlayTexture != null)
+        {
+            return;
+        }
+
+        transitionOverlayTexture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+        transitionOverlayTexture.SetPixel(0, 0, Color.black);
+        transitionOverlayTexture.Apply();
     }
 
     public bool SaveCurrentLevelAsPrefab(string levelPrefabName)
