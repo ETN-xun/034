@@ -16,6 +16,9 @@ public class SemiCircleElementSetup : MonoBehaviour
     private static Mesh circleMesh;
     private static Mesh triangleMesh;
     private static Mesh squareMesh;
+    private static Material sharedVisualMaterial;
+    private static readonly int ColorPropertyId = Shader.PropertyToID("_Color");
+    private static readonly int BaseColorPropertyId = Shader.PropertyToID("_BaseColor");
 
     [SerializeField]
     private float bodyRadiusInGridUnits = DefaultBodyRadiusInGridUnits;
@@ -112,8 +115,7 @@ public class SemiCircleElementSetup : MonoBehaviour
         }
 
         var color = GetBodyColor(circuitElement.ElementType);
-
-        rendererComponent.material.color = color;
+        ApplyRendererColor(rendererComponent, color);
     }
 
     private void EnsureTerminals()
@@ -171,9 +173,62 @@ public class SemiCircleElementSetup : MonoBehaviour
         var rendererComponent = terminalObject.GetComponent<Renderer>();
         if (rendererComponent != null)
         {
-            rendererComponent.material.color = GetTerminalColor(terminalName);
+            ApplyRendererColor(rendererComponent, GetTerminalColor(terminalName));
             rendererComponent.sortingOrder = 10;
         }
+    }
+
+    private static void ApplyRendererColor(Renderer rendererComponent, Color color)
+    {
+        if (rendererComponent == null)
+        {
+            return;
+        }
+
+        var material = GetOrCreateSharedVisualMaterial();
+        if (material != null)
+        {
+            rendererComponent.sharedMaterial = material;
+        }
+
+        var propertyBlock = new MaterialPropertyBlock();
+        rendererComponent.GetPropertyBlock(propertyBlock);
+        if (material != null && material.HasProperty(ColorPropertyId))
+        {
+            propertyBlock.SetColor(ColorPropertyId, color);
+        }
+        else
+        {
+            propertyBlock.SetColor(BaseColorPropertyId, color);
+        }
+        rendererComponent.SetPropertyBlock(propertyBlock);
+    }
+
+    private static Material GetOrCreateSharedVisualMaterial()
+    {
+        if (sharedVisualMaterial != null)
+        {
+            return sharedVisualMaterial;
+        }
+
+        var shader = Shader.Find("Sprites/Default");
+        if (shader == null)
+        {
+            shader = Shader.Find("Universal Render Pipeline/Unlit");
+        }
+
+        if (shader == null)
+        {
+            shader = Shader.Find("Standard");
+        }
+
+        if (shader == null)
+        {
+            return null;
+        }
+
+        sharedVisualMaterial = new Material(shader);
+        return sharedVisualMaterial;
     }
 
     private Color GetTerminalColor(string terminalName)

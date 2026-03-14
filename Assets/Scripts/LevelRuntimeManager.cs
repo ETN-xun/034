@@ -40,6 +40,8 @@ public class LevelRuntimeManager : MonoBehaviour
     private Coroutine levelTransitionCoroutine;
     private const string LevelPrefix = "Level";
     private const string LevelResourceFolder = "Prefabs";
+    private static readonly int ColorPropertyId = Shader.PropertyToID("_Color");
+    private static readonly int BaseColorPropertyId = Shader.PropertyToID("_BaseColor");
 
     public int CurrentLevelIndex => currentLevelIndex;
     public string StatusText => statusText;
@@ -336,6 +338,7 @@ public class LevelRuntimeManager : MonoBehaviour
 
         waitingOverwriteConfirm = false;
         pendingOverwritePath = string.Empty;
+        PrepareLevelMaterialsForExport(levelRoot);
         PrefabUtility.SaveAsPrefabAsset(levelRoot.gameObject, path);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
@@ -568,4 +571,167 @@ public class LevelRuntimeManager : MonoBehaviour
 
         return $"Assets/Resources/Prefabs/{safeName}.prefab";
     }
+
+#if UNITY_EDITOR
+    private static void PrepareLevelMaterialsForExport(Transform levelRoot)
+    {
+        if (levelRoot == null)
+        {
+            return;
+        }
+
+        const string materialFolder = "Assets/Resources/Materials/Generated";
+        EnsureFolderExists(materialFolder);
+
+        var renderers = levelRoot.GetComponentsInChildren<Renderer>(true);
+        for (var i = 0; i < renderers.Length; i++)
+        {
+            var renderer = renderers[i];
+            if (renderer == null)
+            {
+                continue;
+            }
+
+            var sharedMaterials = renderer.sharedMaterials;
+            if (sharedMaterials == null || sharedMaterials.Length == 0)
+            {
+                var fallbackColor = GetRendererColor(renderer);
+                renderer.sharedMaterial = GetOrCreateExportMaterial(materialFolder, null, fallbackColor);
+                continue;
+            }
+
+            var updated = false;
+            for (var materialIndex = 0; materialIndex < sharedMaterials.Length; materialIndex++)
+            {
+                var source = sharedMaterials[materialIndex];
+                if (source != null && AssetDatabase.Contains(source))
+                {
+                    continue;
+                }
+
+                var color = GetMaterialColor(renderer, source);
+                if (source == null)
+                {
+                    color = GetRendererColor(renderer);
+                }
+
+                var exported = GetOrCreateExportMaterial(materialFolder, source, color);
+                if (exported == null)
+                {
+                    continue;
+                }
+
+                sharedMaterials[materialIndex] = exported;
+                updated = true;
+            }
+
+            if (updated)
+            {
+                renderer.sharedMaterials = sharedMaterials;
+            }
+        }
+    }
+
+    private static Material GetOrCreateExportMaterial(string folder, Material source, Color color)
+    {
+        var shader = source != null ? source.shader : null;
+        if (shader == null)
+        {
+            shader = Shader.Find("Sprites/Default");
+        }
+
+        if (shader == null)
+        {
+            return source;
+        }
+
+        var shaderName = shader.name.Replace("/", "_");
+        var colorKey = ColorUtility.ToHtmlStringRGBA(color);
+        var assetPath = $"{folder}/Auto_{shaderName}_{colorKey}.mat";
+        var existing = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        var material = source != null ? new Material(source) : new Material(shader);
+        material.shader = shader;
+        if (material.HasProperty("_Color"))
+        {
+            material.color = color;
+        }
+
+        AssetDatabase.CreateAsset(material, assetPath);
+        return material;
+    }
+
+    private static Color GetMaterialColor(Renderer renderer, Material material)
+    {
+        if (renderer != null)
+        {
+            var propertyBlock = new MaterialPropertyBlock();
+            renderer.GetPropertyBlock(propertyBlock);
+            if (propertyBlock.isEmpty == false)
+            {
+                if (material != null && material.HasProperty(ColorPropertyId))
+                {
+                    return propertyBlock.GetColor(ColorPropertyId);
+                }
+
+                if (material != null && material.HasProperty(BaseColorPropertyId))
+                {
+                    return propertyBlock.GetColor(BaseColorPropertyId);
+                }
+            }
+        }
+
+        if (material != null && material.HasProperty("_Color"))
+        {
+            return material.color;
+        }
+
+        if (material != null && material.HasProperty("_BaseColor"))
+        {
+            return material.GetColor("_BaseColor");
+        }
+
+        return Color.white;
+    }
+
+    private static Color GetRendererColor(Renderer renderer)
+    {
+        if (renderer is LineRenderer lineRenderer)
+        {
+            return lineRenderer.startColor;
+        }
+
+        return Color.white;
+    }
+
+    private static void EnsureFolderExists(string folderPath)
+    {
+        if (AssetDatabase.IsValidFolder(folderPath))
+        {
+            return;
+        }
+
+        var parts = folderPath.Replace("\\", "/").Split('/');
+        if (parts.Length == 0)
+        {
+            return;
+        }
+
+        var current = parts[0];
+        for (var i = 1; i < parts.Length; i++)
+        {
+            var next = current + "/" + parts[i];
+            if (!AssetDatabase.IsValidFolder(next))
+            {
+                AssetDatabase.CreateFolder(current, parts[i]);
+            }
+
+            current = next;
+        }
+    }
+#endif
 }

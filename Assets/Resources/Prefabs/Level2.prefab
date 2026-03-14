@@ -30,7 +30,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: -0.5, z: -0.25}
-  m_LocalScale: {x: 0.22, y: 0.22, z: 0.22}
+  m_LocalScale: {x: 0.1, y: 0.1, z: 0.1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 7010220606011660436}
@@ -87,7 +87,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 0}
+  - {fileID: 2100000, guid: 16c6e52588991c844907e0804f134745, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -122,6 +122,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   <OwnerElement>k__BackingField: {fileID: 5110303149832123882}
+  <AlwaysVisible>k__BackingField: 0
 --- !u!1 &718433348608491285
 GameObject:
   m_ObjectHideFlags: 0
@@ -152,7 +153,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0.5, y: 0, z: -0.25}
-  m_LocalScale: {x: 0.22, y: 0.22, z: 0.22}
+  m_LocalScale: {x: 0.1, y: 0.1, z: 0.1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 7010220606011660436}
@@ -209,7 +210,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 0}
+  - {fileID: 2100000, guid: 16c6e52588991c844907e0804f134745, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -244,6 +245,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   <OwnerElement>k__BackingField: {fileID: 5110303149832123882}
+  <AlwaysVisible>k__BackingField: 0
 --- !u!1 &1576469220138568980
 GameObject:
   m_ObjectHideFlags: 0
@@ -317,7 +319,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 0}
+  - {fileID: 2100000, guid: 7574e9cc26375e441b68f96c503be52d, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -353,6 +355,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   <ElementType>k__BackingField: 5
   <IsLocked>k__BackingField: 1
+  <Length>k__BackingField: 2
+  <Width>k__BackingField: 2
 --- !u!114 &7014958772662623697
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -397,7 +401,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   bodyRadiusInGridUnits: 1
   bodyDepth: 0.2
-  terminalScale: 0.22
   gridSpacing: 1
   terminalWorldZOffset: -0.05
 --- !u!64 &2290775776256299170
@@ -452,7 +455,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0.5, z: -0.25}
-  m_LocalScale: {x: 0.22, y: 0.22, z: 0.22}
+  m_LocalScale: {x: 0.1, y: 0.1, z: 0.1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 7010220606011660436}
@@ -509,7 +512,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 0}
+  - {fileID: 2100000, guid: 16c6e52588991c844907e0804f134745, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -544,6 +547,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   <OwnerElement>k__BackingField: {fileID: 5110303149832123882}
+  <AlwaysVisible>k__BackingField: 0
 --- !u!1 &3408730679803127582
 GameObject:
   m_ObjectHideFlags: 0
@@ -574,7 +578,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -0.5, y: 0, z: -0.25}
-  m_LocalScale: {x: 0.22, y: 0.22, z: 0.22}
+  m_LocalScale: {x: 0.1, y: 0.1, z: 0.1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 7010220606011660436}
@@ -631,7 +635,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 0}
+  - {fileID: 2100000, guid: 16c6e52588991c844907e0804f134745, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -666,6 +670,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   <OwnerElement>k__BackingField: {fileID: 5110303149832123882}
+  <AlwaysVisible>k__BackingField: 0
 --- !u!1 &6012368332033966437
 GameObject:
   m_ObjectHideFlags: 0
@@ -747,6 +752,10 @@ MonoBehaviour:
   - type: 0
     count: 1
     prefabResourcePath: Prefabs/SemiCircleGenerator
+    length: 2
+    width: 2
   - type: 8
     count: 1
     prefabResourcePath: Prefabs/SquareWaveConverter
+    length: 2
+    width: 2

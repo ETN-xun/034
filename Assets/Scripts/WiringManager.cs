@@ -68,6 +68,9 @@ public class WiringManager : MonoBehaviour
     private int activeDragCount;
 
     private Material lineMaterial;
+    private Material junctionVisualMaterial;
+    private static readonly int ColorPropertyId = Shader.PropertyToID("_Color");
+    private static readonly int BaseColorPropertyId = Shader.PropertyToID("_BaseColor");
     public bool AreTerminalsVisible => startTerminal != null;
     public float GridSpacing => Mathf.Max(0.01f, gridSpacing);
     public Material SharedLineMaterial => lineMaterial;
@@ -499,7 +502,41 @@ public class WiringManager : MonoBehaviour
         var rendererComponent = junction.GetComponent<Renderer>();
         if (rendererComponent != null)
         {
-            rendererComponent.material.color = wireColor;
+            if (junctionVisualMaterial == null)
+            {
+                var shader = Shader.Find("Sprites/Default");
+                if (shader == null)
+                {
+                    shader = Shader.Find("Universal Render Pipeline/Unlit");
+                }
+
+                if (shader == null)
+                {
+                    shader = Shader.Find("Standard");
+                }
+
+                if (shader != null)
+                {
+                    junctionVisualMaterial = new Material(shader);
+                }
+            }
+
+            if (junctionVisualMaterial != null)
+            {
+                rendererComponent.sharedMaterial = junctionVisualMaterial;
+            }
+
+            var propertyBlock = new MaterialPropertyBlock();
+            rendererComponent.GetPropertyBlock(propertyBlock);
+            if (junctionVisualMaterial != null && junctionVisualMaterial.HasProperty(ColorPropertyId))
+            {
+                propertyBlock.SetColor(ColorPropertyId, wireColor);
+            }
+            else
+            {
+                propertyBlock.SetColor(BaseColorPropertyId, wireColor);
+            }
+            rendererComponent.SetPropertyBlock(propertyBlock);
             rendererComponent.sortingOrder = 13;
         }
 
