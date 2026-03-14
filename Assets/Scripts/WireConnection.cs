@@ -33,6 +33,7 @@ public class WireConnection : MonoBehaviour
     private readonly List<Vector3> routedPolyline = new List<Vector3>();
     private readonly List<float> segmentLengths = new List<float>();
     private readonly List<Vector3> signalPoints = new List<Vector3>();
+    private readonly List<float> signalSampleDistances = new List<float>();
     private readonly List<SignalSourceInfo> signalSources = new List<SignalSourceInfo>();
     private float totalLength;
     private float signalAmplitude;
@@ -1252,12 +1253,12 @@ public class WireConnection : MonoBehaviour
         }
 
         var sampleStep = 0.08f;
-        var sampleCount = Mathf.Max(2, Mathf.CeilToInt(totalLength / sampleStep) + 1);
         signalPoints.Clear();
         var time = Time.time;
-        for (var i = 0; i < sampleCount; i++)
+        BuildSignalSampleDistances(time, sampleStep, signalSampleDistances);
+        for (var i = 0; i < signalSampleDistances.Count; i++)
         {
-            var distance = totalLength * i / (sampleCount - 1);
+            var distance = signalSampleDistances[i];
             var sample = SampleAtDistance(distance);
             var offset = ComputeSignalOffset(distance, time);
             sample.point += sample.normal * offset;
@@ -1270,6 +1271,86 @@ public class WireConnection : MonoBehaviour
         for (var i = 0; i < signalPoints.Count; i++)
         {
             signalRenderer.SetPosition(i, signalPoints[i]);
+        }
+    }
+
+    private void BuildSignalSampleDistances(float time, float sampleStep, List<float> output)
+    {
+        output.Clear();
+        var sampleCount = Mathf.Max(2, Mathf.CeilToInt(totalLength / sampleStep) + 1);
+        for (var i = 0; i < sampleCount; i++)
+        {
+            output.Add(totalLength * i / (sampleCount - 1));
+        }
+
+        for (var i = 0; i < signalSources.Count; i++)
+        {
+            var source = signalSources[i];
+            if (source.Waveform != SignalWaveform.Semicircle && source.Waveform != SignalWaveform.Square)
+            {
+                continue;
+            }
+
+            AddBoundarySampleDistancesForSource(source, time, sampleStep, output);
+        }
+
+        output.Sort();
+        var writeIndex = 0;
+        const float mergeTolerance = 0.0005f;
+        for (var i = 0; i < output.Count; i++)
+        {
+            if (writeIndex > 0 && Mathf.Abs(output[i] - output[writeIndex - 1]) <= mergeTolerance)
+            {
+                continue;
+            }
+
+            output[writeIndex] = output[i];
+            writeIndex++;
+        }
+
+        if (writeIndex < output.Count)
+        {
+            output.RemoveRange(writeIndex, output.Count - writeIndex);
+        }
+    }
+
+    private void AddBoundarySampleDistancesForSource(SignalSourceInfo source, float time, float sampleStep, List<float> output)
+    {
+        var safeWavelength = Mathf.Max(0.001f, source.Wavelength);
+        var halfWave = Mathf.Max(0.0005f, safeWavelength * 0.5f);
+        var phaseDistance = time * signalFrequency * safeWavelength;
+        var baseDistance = source.IsFromTerminalA
+            ? phaseDistance - source.DistanceOffset
+            : totalLength + source.DistanceOffset - phaseDistance;
+        var direction = source.IsFromTerminalA ? 1f : -1f;
+        var edgeDelta = Mathf.Min(sampleStep * 0.2f, halfWave * 0.2f);
+        edgeDelta = Mathf.Max(0.0005f, edgeDelta);
+        var stepCount = Mathf.CeilToInt((totalLength + Mathf.Abs(baseDistance)) / halfWave) + 4;
+
+        for (var step = -stepCount; step <= stepCount; step++)
+        {
+            var boundaryDistance = baseDistance + direction * step * halfWave;
+            if (boundaryDistance < -edgeDelta || boundaryDistance > totalLength + edgeDelta)
+            {
+                continue;
+            }
+
+            if (boundaryDistance > 0f && boundaryDistance < totalLength)
+            {
+                output.Add(boundaryDistance);
+            }
+
+            var before = boundaryDistance - edgeDelta;
+            if (before > 0f && before < totalLength)
+            {
+                output.Add(before);
+            }
+
+            var after = boundaryDistance + edgeDelta;
+            if (after > 0f && after < totalLength)
+            {
+                output.Add(after);
+            }
         }
     }
 
